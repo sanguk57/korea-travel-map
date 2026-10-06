@@ -1,0 +1,22 @@
+{
+  "name": "korea-travel-map",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "data:regions": "node scripts/build-regions.mjs",
+    "data:fetch": "node --env-file-if-exists=.env.local scripts/fetch-data.mjs"
+  },
+  "dependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "topojson-client": "^3.1.0",
+    "vite": "^6.4.3"
+  }
+}

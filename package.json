@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "data:regions": "node scripts/build-regions.mjs",
-    "data:fetch": "node --env-file-if-exists=.env.local scripts/fetch-data.mjs"
+    "data:fetch": "node --env-file-if-exists=.env.local scripts/fetch-data.mjs",
+    "data:enrich": "node --env-file-if-exists=.env.local scripts/enrich.mjs"
   },
   "dependencies": {
     "react": "^19.3.0",

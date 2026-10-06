@@ -11,7 +11,7 @@ export function loadKakaoMaps(appKey) {
       return;
     }
     const script = document.createElement('script');
-    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${appKey}&autoload=false`;
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${appKey}&autoload=false&libraries=clusterer`;
     script.onload = () => window.kakao.maps.load(() => resolve(window.kakao));
     script.onerror = () =>
       reject(new Error('카카오맵 SDK를 불러오지 못했습니다. JavaScript 키와 등록된 도메인을 확인하세요.'));

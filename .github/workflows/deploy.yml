@@ -37,7 +37,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: public/data/places
-          key: places-${{ steps.date.outputs.today }}
+          key: places-v2-${{ steps.date.outputs.today }} # 데이터 형식이 바뀌면 v 숫자를 올린다
 
       - name: Fetch place data
         if: steps.cache.outputs.cache-hit != 'true'
@@ -45,6 +45,24 @@ jobs:
         env:
           TOUR_API_KEY: ${{ secrets.TOUR_API_KEY }}
           KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
+          KMA_API_KEY: ${{ secrets.KMA_API_KEY }}
+
+      # 장소 상세·블로그 언급 수는 일일 한도 안에서 매일 조금씩 쌓는다.
+      # 실행마다 새 키로 저장하고 가장 최근 것을 복원해 이어 받는다.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .cache/enrich
+            public/data/details
+          key: enrich-${{ github.run_id }}
+          restore-keys: enrich-
+
+      - name: Enrich (details, blog mentions)
+        run: node scripts/enrich.mjs
+        env:
+          TOUR_API_KEY: ${{ secrets.TOUR_API_KEY }}
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
 
       - name: Build
         run: |

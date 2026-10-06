@@ -8,10 +8,19 @@ export const SORTS = [
   { key: 'time', label: '도착 시간순', hint: '현재 위치에서 실제 경로로 빨리 도착하는 순' },
   { key: 'distance', label: '내 주변순', hint: '현재 위치에서 가까운 순(직선 거리)' },
   { key: 'name', label: '이름순', hint: '가나다 순' },
+  { key: 'blog', label: '블로그 언급순', hint: '네이버 블로그에 많이 언급된 순 (수집된 곳만)', needs: 'naver' },
 ];
+
+const TODAY = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10).replaceAll('-', '');
+export const isOngoing = (p, today = TODAY()) => p.start <= today && today <= p.end;
 
 function recommendScore(p) {
   if (p.source === 'kakao') return 100 - (p.rank ?? 99); // 카카오 정확도 순위
+  if (p.start) {
+    // 축제: 진행 중 → 곧 시작하는 순
+    const today = TODAY();
+    return isOngoing(p, today) ? 1e9 - Number(p.end) : -Number(p.start);
+  }
   let score = 0;
   if (p.image) score += 3;
   if (p.tel) score += 1;
@@ -52,6 +61,8 @@ export function sortPlaces(items, sort, origin, etaOf) {
       return list.sort(byDateDesc('modified'));
     case 'distance':
       return origin ? list.sort((a, b) => distanceKm(origin, a) - distanceKm(origin, b)) : list;
+    case 'blog':
+      return list.sort((a, b) => (b.blog ?? -1) - (a.blog ?? -1));
     case 'name':
       return list.sort((a, b) => a.title.localeCompare(b.title, 'ko'));
     default:

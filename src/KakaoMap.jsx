@@ -9,7 +9,14 @@ const STYLE = {
   selected: { strokeColor: '#4338ca', strokeWeight: 3, strokeOpacity: 1, fillColor: '#6366f1', fillOpacity: 0.1 },
 };
 
-const PIN_COLOR = { attractions: '#0d9488', restaurants: '#ea580c', stays: '#db2777' };
+const PIN_COLOR = { attractions: '#0d9488', restaurants: '#ea580c', stays: '#db2777', festivals: '#9333ea' };
+
+// 마커가 많을 때 묶어 보여주는 클러스터 모양 (개수에 따라 3단계)
+const CLUSTER_STYLE = (size, bg) => ({
+  width: `${size}px`, height: `${size}px`, lineHeight: `${size}px`, borderRadius: '50%', textAlign: 'center',
+  background: bg, color: '#fff', fontWeight: '700', fontSize: '13px',
+  border: '3px solid rgba(255,255,255,0.9)', boxShadow: '0 4px 12px rgba(22,27,46,0.25)',
+});
 const INITIAL_VIEW = { lat: 36.0, lng: 127.8, level: 13 };
 
 // 탭 색상의 SVG 핀. 선택된 장소는 크게 그린다.
@@ -26,7 +33,18 @@ function pinImage(kakao, color, big) {
 const escapeHtml = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-export default function KakaoMap({ regions, selectedCode, onSelectRegion, places, tab, focusedId, onFocusPlace, origin, route }) {
+export default function KakaoMap({
+  regions,
+  selectedCode,
+  onSelectRegion,
+  places,
+  tab,
+  focusedId,
+  onFocusPlace,
+  origin,
+  route,
+  course,
+}) {
   const containerRef = useRef(null);
   const kakaoRef = useRef(null);
   const mapRef = useRef(null);
@@ -37,6 +55,7 @@ export default function KakaoMap({ regions, selectedCode, onSelectRegion, places
   const labelRef = useRef(null);
   const infoRef = useRef(null);
   const meRef = useRef(null);
+  const clustererRef = useRef(null);
   const selectedRef = useRef(selectedCode);
   const callbacksRef = useRef({ onSelectRegion, onFocusPlace });
   const [ready, setReady] = useState(false);
@@ -59,6 +78,14 @@ export default function KakaoMap({ regions, selectedCode, onSelectRegion, places
         labelRef.current = new kakao.maps.CustomOverlay({ yAnchor: 1.6, zIndex: 3 });
         infoRef.current = new kakao.maps.CustomOverlay({ yAnchor: 2.6, zIndex: 4 });
         meRef.current = new kakao.maps.CustomOverlay({ content: '<div class="me-dot"></div>', zIndex: 5 });
+        clustererRef.current = new kakao.maps.MarkerClusterer({
+          map: mapRef.current,
+          averageCenter: true,
+          minLevel: 7, // 이 줌 레벨부터 묶는다 (숫자가 클수록 멀리 본 상태)
+          minClusterSize: 3,
+          calculator: [10, 40],
+          styles: [CLUSTER_STYLE(36, '#6366f1'), CLUSTER_STYLE(44, '#4f46e5'), CLUSTER_STYLE(54, '#3730a3')],
+        });
         setReady(true);
       })
       .catch((e) => !cancelled && setError(e.message));
@@ -151,7 +178,6 @@ export default function KakaoMap({ regions, selectedCode, onSelectRegion, places
     focusedRef.current = null;
     for (const place of places) {
       const marker = new kakao.maps.Marker({
-        map: mapRef.current,
         position: new kakao.maps.LatLng(place.lat, place.lng),
         title: place.title,
         image: pins.normal,
@@ -160,7 +186,9 @@ export default function KakaoMap({ regions, selectedCode, onSelectRegion, places
       kakao.maps.event.addListener(marker, 'click', () => callbacksRef.current.onFocusPlace(place.id));
       markersRef.current.set(place.id, marker);
     }
+    clustererRef.current.addMarkers([...markersRef.current.values()]);
     return () => {
+      clustererRef.current.clear();
       markersRef.current.forEach((m) => m.setMap(null));
       markersRef.current.clear();
       infoRef.current?.setMap(null);
@@ -176,6 +204,8 @@ export default function KakaoMap({ regions, selectedCode, onSelectRegion, places
     if (prev) {
       prev.setImage(pins.normal);
       prev.setZIndex(0);
+      prev.setMap(null);
+      clustererRef.current.addMarker(prev);
     }
     focusedRef.current = focusedId;
 
@@ -184,9 +214,14 @@ export default function KakaoMap({ regions, selectedCode, onSelectRegion, places
       info.setMap(null);
       return;
     }
+    // 선택한 마커는 클러스터에서 빼서 항상 보이게 한다
     const marker = markersRef.current.get(place.id);
-    marker?.setImage(pins.big);
-    marker?.setZIndex(10);
+    if (marker) {
+      clustererRef.current.removeMarker(marker);
+      marker.setImage(pins.big);
+      marker.setZIndex(10);
+      marker.setMap(mapRef.current);
+    }
 
     const pos = new kakaoRef.current.maps.LatLng(place.lat, place.lng);
     info.setContent(`<div class="map-info">${escapeHtml(place.title)}</div>`);
@@ -233,6 +268,48 @@ export default function KakaoMap({ regions, selectedCode, onSelectRegion, places
     if (!bounds.isEmpty()) map.setBounds(bounds, 60, 60, 220, 60);
     return () => lines.forEach((l) => l.setMap(null));
   }, [ready, route, origin]);
+
+  // 하루 코스: 번호 표시 + 구간 경로
+  const courseKey = course ? `${course.start ? `${course.start.lat},${course.start.lng}` : ''}|${course.stops.map((p) => p.id).join(',')}` : '';
+  useEffect(() => {
+    if (!ready || !course?.stops.length) return;
+    const kakao = kakaoRef.current;
+    const bounds = new kakao.maps.LatLngBounds();
+    course.stops.forEach((p) => bounds.extend(new kakao.maps.LatLng(p.lat, p.lng)));
+    if (course.start) bounds.extend(new kakao.maps.LatLng(course.start.lat, course.start.lng));
+    if (course.stops.length === 1 && !course.start) mapRef.current.setCenter(bounds.getSouthWest());
+    else mapRef.current.setBounds(bounds, 60, 60, 60, 60);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, courseKey]);
+
+  useEffect(() => {
+    if (!ready || !course?.stops.length) return;
+    const kakao = kakaoRef.current;
+    const map = mapRef.current;
+    const overlays = course.stops.map((p, i) => {
+      const el = document.createElement('button');
+      el.className = `course-pin ${p.id === focusedId ? 'active' : ''}`;
+      el.textContent = String(i + 1);
+      el.title = p.title;
+      el.onclick = () => callbacksRef.current.onFocusPlace(p.id);
+      return new kakao.maps.CustomOverlay({ map, position: new kakao.maps.LatLng(p.lat, p.lng), content: el, zIndex: p.id === focusedId ? 7 : 6 });
+    });
+    const lines = course.legs.flatMap((leg) =>
+      (leg?.route?.paths ?? []).flatMap(({ coords, color, dashed }) => {
+        const path = coords.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng));
+        return [
+          new kakao.maps.Polyline({ map, path, strokeWeight: 8, strokeColor: '#ffffff', strokeOpacity: 0.9, zIndex: 1 }),
+          new kakao.maps.Polyline({ map, path, strokeWeight: 4, strokeColor: color, strokeOpacity: 0.9, strokeStyle: dashed ? 'shortdash' : 'solid', zIndex: 2 }),
+        ];
+      }),
+    );
+    const focused = course.stops.find((p) => p.id === focusedId);
+    if (focused) map.panTo(new kakao.maps.LatLng(focused.lat, focused.lng));
+    return () => {
+      overlays.forEach((o) => o.setMap(null));
+      lines.forEach((l) => l.setMap(null));
+    };
+  }, [ready, course, focusedId]);
 
   return (
     <div className="map-wrap">

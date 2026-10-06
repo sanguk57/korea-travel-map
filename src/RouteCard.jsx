@@ -1,3 +1,4 @@
+import { FavButton } from './PlacePanel.jsx';
 import { MODES, formatMinutes } from './routing.js';
 
 const formatMeters = (m) => (m >= 1000 ? `${(m / 1000).toFixed(m >= 10000 ? 0 : 1)}km` : `${Math.round(m)}m`);
@@ -9,7 +10,19 @@ function kakaoDirections(origin, place) {
     : `https://map.kakao.com/link/to/${to}`;
 }
 
-export default function RouteCard({ place, origin, geoStatus, onRequestLocation, routes, mode, onModeChange, onClose }) {
+export default function RouteCard({
+  place,
+  origin,
+  geoStatus,
+  onRequestLocation,
+  routes,
+  mode,
+  onModeChange,
+  onClose,
+  favorite,
+  onToggleFavorite,
+  onShare,
+}) {
   const current = routes[mode];
 
   return (
@@ -19,9 +32,15 @@ export default function RouteCard({ place, origin, geoStatus, onRequestLocation,
           <p className="eyebrow">내 위치에서</p>
           <h3>{place.title}</h3>
         </div>
-        <button className="route-close" onClick={onClose} aria-label="닫기">
-          ×
-        </button>
+        <div className="route-head-actions">
+          <FavButton active={favorite} onClick={onToggleFavorite} />
+          <button className="route-close" onClick={onShare} aria-label="링크 공유" title="이 장소 링크 복사">
+            🔗
+          </button>
+          <button className="route-close" onClick={onClose} aria-label="닫기">
+            ×
+          </button>
+        </div>
       </header>
 
       {!origin ? (

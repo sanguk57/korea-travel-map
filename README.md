@@ -1,7 +1,15 @@
 # 🗺️ 한국 여행 지도
 
-지도에서 시·군·구를 클릭하면 그 지역의 **관광지 · 맛집 · 숙소**를 보여주는 웹앱입니다.
+지도에서 시·군·구를 클릭하면 그 지역의 **관광지 · 맛집 · 숙소 · 축제**를 보여주는 웹앱입니다.
 GitHub Pages로 호스팅하며 서버 비용 없이 동작합니다.
+
+**주요 기능**
+- 시·군·구 선택, 지역 검색, 3일 날씨 예보
+- 추천·신규 등록·최근 업데이트·도착 시간·내 주변·이름·블로그 언급순 정렬
+- 장소 상세(운영시간·쉬는 날·주차·사진), 진행 중·예정 축제
+- 내 위치에서 자동차·대중교통·도보 소요 시간과 경로
+- ♥ 찜한 장소로 하루 코스 만들기 (방문 순서 최적화, 구간별 이동 시간)
+- 화면 상태가 담긴 공유 링크, 마커 클러스터링
 
 ## 구조
 
@@ -62,7 +70,8 @@ Node.js 22 이상이 필요합니다.
 ```bash
 npm install
 cp .env.example .env.local   # 키 3개 입력
-npm run data:fetch           # 장소 데이터 수집 (수 분 소요)
+npm run data:fetch           # 장소·축제·날씨 수집 (수 분 소요)
+npm run data:enrich          # 장소 상세·블로그 언급 수 (하루 한도 안에서 누적)
 npm run dev                  # http://localhost:5173
 ```
 
@@ -73,7 +82,10 @@ npm run dev                  # http://localhost:5173
 | `src/App.jsx` | 상태 관리, 지역 선택 시 JSON 로드 |
 | `src/KakaoMap.jsx` | 지도, 시·군·구 경계 폴리곤, 마커 |
 | `src/PlacePanel.jsx` | 관광지/맛집/숙소 탭과 목록 |
+| `src/CoursePanel.jsx`, `src/course.js` | 찜한 장소로 하루 코스, 방문 순서 최적화 |
+| `src/routing.js` | TMAP·ODsay 경로 조회 |
 | `scripts/fetch-data.mjs` | API 수집 및 지역별 JSON 생성 (백엔드 역할) |
+| `scripts/enrich.mjs` | 장소 상세·블로그 언급 수를 매일 조금씩 누적 |
 | `scripts/build-regions.mjs` | 경계 TopoJSON → `public/data/regions.json` 변환 (최초 1회) |
 | `.github/workflows/deploy.yml` | 매일 수집 + 빌드 + Pages 배포 |
 

@@ -36,7 +36,15 @@ export default function PlaceDetail({ place }) {
   if (place.source !== 'tour') return null;
   if (detail === undefined) return <div className="detail muted small">상세 정보 불러오는 중…</div>;
   if (detail === null) {
-    return <div className="detail muted small">상세 정보는 아직 준비 중이에요. 인기 장소부터 매일 조금씩 채워집니다.</div>;
+    const search = `https://korean.visitkorea.or.kr/search/search_list.do?keyword=${encodeURIComponent(place.title)}`;
+    return (
+      <div className="detail detail-pending small" onClick={(e) => e.stopPropagation()}>
+        <span className="muted">상세 정보는 아직 준비 중이에요. 인기 장소부터 매일 채워집니다.</span>
+        <a className="chip-link" href={search} target="_blank" rel="noreferrer">
+          대한민국 구석구석에서 보기 ↗
+        </a>
+      </div>
+    );
   }
 
   const long = (detail.overview?.length ?? 0) > 160;

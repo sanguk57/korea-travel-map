@@ -9,7 +9,8 @@
 //   TOUR_API_KEY         공공데이터포털 TourAPI 서비스키
 //   NAVER_CLIENT_ID      (선택) 네이버 개발자센터 애플리케이션 Client ID
 //   NAVER_CLIENT_SECRET  (선택) 〃 Client Secret
-//   DETAIL_DAILY_PLACES  (선택) 하루에 상세를 받을 장소 수, 기본 300 (장소당 TourAPI 3회)
+//   DETAIL_DAILY_PLACES  (선택) 하루에 상세를 받을 장소 수, 기본 950
+//                        (장소당 detailCommon2·detailIntro2·detailImage2 각 1회. 개발계정은 기능별 일 1,000회)
 //   NAVER_DAILY_CALLS    (선택) 하루 네이버 검색 호출 수, 기본 20000 (한도 25,000)
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { sortPlaces } from '../src/sort.js';
@@ -24,7 +25,7 @@ const rawTourKey = process.env.TOUR_API_KEY?.trim();
 const TOUR_KEY = rawTourKey?.includes('%') ? decodeURIComponent(rawTourKey) : rawTourKey;
 const NAVER_ID = process.env.NAVER_CLIENT_ID?.trim();
 const NAVER_SECRET = process.env.NAVER_CLIENT_SECRET?.trim();
-const DETAIL_DAILY_PLACES = Number(process.env.DETAIL_DAILY_PLACES) || 300;
+const DETAIL_DAILY_PLACES = Number(process.env.DETAIL_DAILY_PLACES) || 950;
 const NAVER_DAILY_CALLS = Number(process.env.NAVER_DAILY_CALLS) || 20000;
 
 const DETAIL_MAX_AGE_DAYS = 60;

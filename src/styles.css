@@ -441,3 +441,4 @@ code { background: var(--surface-2); padding: 1px 6px; border-radius: 6px; font-
   .weather-day { padding: 6px 8px; }
   .course-cta { width: calc(100% - 32px); margin: 4px 16px 0; }
 }
+.detail-pending { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

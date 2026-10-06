@@ -63,6 +63,8 @@ jobs:
           TOUR_API_KEY: ${{ secrets.TOUR_API_KEY }}
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          # TourAPI 운영계정으로 한도가 늘면 저장소 Variables에 DETAIL_DAILY_PLACES를 올린다
+          DETAIL_DAILY_PLACES: ${{ vars.DETAIL_DAILY_PLACES }}
 
       - name: Build
         run: |

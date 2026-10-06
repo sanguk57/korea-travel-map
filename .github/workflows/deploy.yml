@@ -65,6 +65,8 @@ jobs:
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
           # TourAPI 운영계정으로 한도가 늘면 저장소 Variables에 DETAIL_DAILY_PLACES를 올린다
           DETAIL_DAILY_PLACES: ${{ vars.DETAIL_DAILY_PLACES }}
+          # 블로그 수집은 오래 걸리므로 매일 새벽 실행에서 몰아서 하고, push 배포는 짧게 끝낸다
+          NAVER_TIME_BUDGET_MIN: ${{ github.event_name == 'schedule' && '40' || '3' }}
 
       - name: Build
         run: |

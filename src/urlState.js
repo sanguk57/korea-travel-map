@@ -1,5 +1,5 @@
-// 화면 상태를 주소(?r=지역&t=탭&p=장소&s=정렬&v=course)에 담아 링크로 공유할 수 있게 한다.
-const KEYS = { region: 'r', tab: 't', place: 'p', sort: 's', view: 'v' };
+// 화면 상태를 주소(?r=지역&t=탭&p=장소&c=추천코스&s=정렬&v=course)에 담아 링크로 공유할 수 있게 한다.
+const KEYS = { region: 'r', tab: 't', place: 'p', course: 'c', sort: 's', view: 'v' };
 const DEFAULTS = { tab: 'attractions', sort: 'recommended', view: 'explore' };
 
 export function readUrlState() {

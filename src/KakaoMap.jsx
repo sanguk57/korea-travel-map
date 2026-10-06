@@ -13,9 +13,17 @@ const PIN_COLOR = { attractions: '#0d9488', restaurants: '#ea580c', stays: '#db2
 
 // 마커가 많을 때 묶어 보여주는 클러스터 모양 (개수에 따라 3단계)
 const CLUSTER_STYLE = (size, bg) => ({
-  width: `${size}px`, height: `${size}px`, lineHeight: `${size}px`, borderRadius: '50%', textAlign: 'center',
-  background: bg, color: '#fff', fontWeight: '700', fontSize: '13px',
-  border: '3px solid rgba(255,255,255,0.9)', boxShadow: '0 4px 12px rgba(22,27,46,0.25)',
+  width: `${size}px`,
+  height: `${size}px`,
+  lineHeight: `${size}px`,
+  borderRadius: '50%',
+  textAlign: 'center',
+  background: bg,
+  color: '#fff',
+  fontWeight: '700',
+  fontSize: '13px',
+  border: '3px solid rgba(255,255,255,0.9)',
+  boxShadow: '0 4px 12px rgba(22,27,46,0.25)',
 });
 const INITIAL_VIEW = { lat: 36.0, lng: 127.8, level: 13 };
 
@@ -25,9 +33,13 @@ function pinImage(kakao, color, big) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 26 34">
 <path d="M13 33s11.5-10.8 11.5-19.7A11.5 11.5 0 0 0 1.5 13.3C1.5 22.2 13 33 13 33z" fill="${color}" stroke="#fff" stroke-width="2"/>
 <circle cx="13" cy="13.3" r="4.3" fill="#fff"/></svg>`;
-  return new kakao.maps.MarkerImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, new kakao.maps.Size(w, h), {
-    offset: new kakao.maps.Point(w / 2, h - 1),
-  });
+  return new kakao.maps.MarkerImage(
+    `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
+    new kakao.maps.Size(w, h),
+    {
+      offset: new kakao.maps.Point(w / 2, h - 1),
+    },
+  );
 }
 
 const escapeHtml = (s) =>
@@ -160,7 +172,10 @@ export default function KakaoMap({
       const [minLng, minLat, maxLng, maxLat] = region.bbox;
       mapRef.current.setBounds(
         new kakao.maps.LatLngBounds(new kakao.maps.LatLng(minLat, minLng), new kakao.maps.LatLng(maxLat, maxLng)),
-        40, 40, 40, 40,
+        40,
+        40,
+        40,
+        40,
       );
     } else if (prev) {
       mapRef.current.setLevel(INITIAL_VIEW.level);
@@ -270,7 +285,9 @@ export default function KakaoMap({
   }, [ready, route, origin]);
 
   // 하루 코스: 번호 표시 + 구간 경로
-  const courseKey = course ? `${course.start ? `${course.start.lat},${course.start.lng}` : ''}|${course.stops.map((p) => p.id).join(',')}` : '';
+  const courseKey = course
+    ? `${course.start ? `${course.start.lat},${course.start.lng}` : ''}|${course.stops.map((p) => p.id).join(',')}`
+    : '';
   useEffect(() => {
     if (!ready || !course?.stops.length) return;
     const kakao = kakaoRef.current;
@@ -292,17 +309,53 @@ export default function KakaoMap({
       el.textContent = String(i + 1);
       el.title = p.title;
       el.onclick = () => callbacksRef.current.onFocusPlace(p.id);
-      return new kakao.maps.CustomOverlay({ map, position: new kakao.maps.LatLng(p.lat, p.lng), content: el, zIndex: p.id === focusedId ? 7 : 6 });
+      return new kakao.maps.CustomOverlay({
+        map,
+        position: new kakao.maps.LatLng(p.lat, p.lng),
+        content: el,
+        zIndex: p.id === focusedId ? 7 : 6,
+      });
     });
-    const lines = course.legs.flatMap((leg) =>
-      (leg?.route?.paths ?? []).flatMap(({ coords, color, dashed }) => {
-        const path = coords.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng));
-        return [
-          new kakao.maps.Polyline({ map, path, strokeWeight: 8, strokeColor: '#ffffff', strokeOpacity: 0.9, zIndex: 1 }),
-          new kakao.maps.Polyline({ map, path, strokeWeight: 4, strokeColor: color, strokeOpacity: 0.9, strokeStyle: dashed ? 'shortdash' : 'solid', zIndex: 2 }),
-        ];
-      }),
-    );
+    const preview = course.preview
+      ? [
+          new kakao.maps.Polyline({
+            map,
+            path: course.stops.map((p) => new kakao.maps.LatLng(p.lat, p.lng)),
+            strokeWeight: 4,
+            strokeColor: '#4f46e5',
+            strokeOpacity: 0.8,
+            strokeStyle: 'dash',
+            zIndex: 2,
+          }),
+        ]
+      : [];
+    const lines = [
+      ...preview,
+      ...course.legs.flatMap((leg) =>
+        (leg?.route?.paths ?? []).flatMap(({ coords, color, dashed }) => {
+          const path = coords.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng));
+          return [
+            new kakao.maps.Polyline({
+              map,
+              path,
+              strokeWeight: 8,
+              strokeColor: '#ffffff',
+              strokeOpacity: 0.9,
+              zIndex: 1,
+            }),
+            new kakao.maps.Polyline({
+              map,
+              path,
+              strokeWeight: 4,
+              strokeColor: color,
+              strokeOpacity: 0.9,
+              strokeStyle: dashed ? 'shortdash' : 'solid',
+              zIndex: 2,
+            }),
+          ];
+        }),
+      ),
+    ];
     const focused = course.stops.find((p) => p.id === focusedId);
     if (focused) map.panTo(new kakao.maps.LatLng(focused.lat, focused.lng));
     return () => {

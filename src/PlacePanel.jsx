@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import PlaceDetail from './PlaceDetail.jsx';
+import RegionCourses from './RegionCourses.jsx';
 import Weather from './Weather.jsx';
 import { MODES, formatMinutes, modeAvailable } from './routing.js';
 import { SORTS, TIME_CANDIDATES, distanceKm, isOngoing } from './sort.js';
@@ -9,6 +10,7 @@ export const TABS = [
   { key: 'restaurants', label: '맛집', icon: '🍜' },
   { key: 'stays', label: '숙소', icon: '🛏️' },
   { key: 'festivals', label: '축제', icon: '🎉' },
+  { key: 'courses', label: '코스', icon: '🧭' },
 ];
 
 const FEATURED = [
@@ -91,7 +93,13 @@ function PlaceItem({ place, focused, onFocus, sort, origin, eta, travelMode, fav
           {place.category && <div className="place-cat">{place.category.split(' > ').pop()}</div>}
           <div className="place-addr">{place.addr}</div>
           <div className="place-actions">
-            <a className="chip-link" href={place.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
+            <a
+              className="chip-link"
+              href={place.url}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+            >
               지도 보기 ↗
             </a>
             {place.tel && (
@@ -114,7 +122,18 @@ function PlaceItem({ place, focused, onFocus, sort, origin, eta, travelMode, fav
   );
 }
 
-function PlaceList({ items, focusedId, onFocusPlace, empty, sort, origin, etas, travelMode, isFavorite, onToggleFavorite }) {
+function PlaceList({
+  items,
+  focusedId,
+  onFocusPlace,
+  empty,
+  sort,
+  origin,
+  etas,
+  travelMode,
+  isFavorite,
+  onToggleFavorite,
+}) {
   if (items.length === 0) return <p className="empty-msg">{empty}</p>;
   return (
     <ul className="places">
@@ -182,7 +201,9 @@ function Welcome({ regions, meta, onSelectRegion, favoriteCount, onOpenCourse })
               const r = byCode.get(f.code);
               return (
                 <button key={f.code} className="featured-card" onClick={() => onSelectRegion(f.code)}>
-                  <span className="featured-emoji" aria-hidden="true">{f.emoji}</span>
+                  <span className="featured-emoji" aria-hidden="true">
+                    {f.emoji}
+                  </span>
                   <strong>{r.name}</strong>
                   <small>{f.tag}</small>
                 </button>
@@ -227,6 +248,10 @@ export default function PlacePanel({
   favoriteCount,
   onOpenCourse,
   onShare,
+  courses,
+  selectedCourseId,
+  onSelectCourse,
+  onSaveCourse,
 }) {
   if (!region) {
     return (
@@ -254,6 +279,7 @@ export default function PlacePanel({
         restaurants: data.restaurants.length + data.tourRestaurants.length,
         stays: data.stays.length,
         festivals: data.festivals?.length ?? 0,
+        courses: courses.length,
       }
     : {};
 
@@ -286,21 +312,23 @@ export default function PlacePanel({
             </button>
           ))}
         </nav>
-        <div className="sorts" role="radiogroup" aria-label="정렬">
-          {sorts.map((s) => (
-            <button
-              key={s.key}
-              role="radio"
-              aria-checked={sort === s.key}
-              className={sort === s.key ? 'active' : ''}
-              title={s.hint}
-              onClick={() => onSortChange(s.key)}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-        {sort === 'time' && (
+        {tab !== 'courses' && (
+          <div className="sorts" role="radiogroup" aria-label="정렬">
+            {sorts.map((s) => (
+              <button
+                key={s.key}
+                role="radio"
+                aria-checked={sort === s.key}
+                className={sort === s.key ? 'active' : ''}
+                title={s.hint}
+                onClick={() => onSortChange(s.key)}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {sort === 'time' && tab !== 'courses' && (
           <div className="modes" role="radiogroup" aria-label="이동 수단">
             {MODES.map((m) => (
               <button
@@ -319,27 +347,54 @@ export default function PlacePanel({
       </div>
 
       <div className="panel-body">
-        {needsLocation && geoStatus === 'pending' && <p className="sort-note">현재 위치를 확인하는 중…</p>}
-        {needsLocation && geoStatus === 'denied' && (
-          <p className="notice">위치 권한이 없어 이 순서로 정렬할 수 없습니다. 브라우저에서 위치 접근을 허용해 주세요.</p>
+        {tab === 'courses' ? (
+          <p className="sort-note">코스를 누르면 지도에 동선이 표시됩니다. 담으면 실제 이동 시간을 계산해 드려요.</p>
+        ) : (
+          <>
+            {needsLocation && geoStatus === 'pending' && <p className="sort-note">현재 위치를 확인하는 중…</p>}
+            {needsLocation && geoStatus === 'denied' && (
+              <p className="notice">
+                위치 권한이 없어 이 순서로 정렬할 수 없습니다. 브라우저에서 위치 접근을 허용해 주세요.
+              </p>
+            )}
+            {sort === 'time' && origin && !modeAvailable(travelMode) && (
+              <p className="notice">
+                {travelMode === 'transit' ? 'ODsay' : 'TMAP'} API 키가 설정되지 않아 이동 시간을 계산할 수 없습니다.
+              </p>
+            )}
+            {sort === 'time' && origin && modeAvailable(travelMode) && (
+              <p className="sort-note">
+                가까운 {TIME_CANDIDATES}곳의 실제 경로 시간을 비교합니다. 나머지는 직선 거리순입니다.
+              </p>
+            )}
+            {!needsLocation && <p className="sort-note">{SORTS.find((s) => s.key === sort)?.hint}</p>}
+          </>
         )}
-        {sort === 'time' && origin && !modeAvailable(travelMode) && (
-          <p className="notice">
-            {travelMode === 'transit' ? 'ODsay' : 'TMAP'} API 키가 설정되지 않아 이동 시간을 계산할 수 없습니다.
-          </p>
-        )}
-        {sort === 'time' && origin && modeAvailable(travelMode) && (
-          <p className="sort-note">가까운 {TIME_CANDIDATES}곳의 실제 경로 시간을 비교합니다. 나머지는 직선 거리순입니다.</p>
-        )}
-        {!needsLocation && <p className="sort-note">{SORTS.find((s) => s.key === sort)?.hint}</p>}
         {status === 'loading' && <Skeleton />}
         {status === 'error' && <p className="notice">이 지역의 데이터 파일을 찾을 수 없습니다.</p>}
         {status === 'ready' && data && (
           <>
-            {tab === 'attractions' && <PlaceList items={data.attractions} {...listProps} empty="등록된 관광지가 없습니다." />}
+            {tab === 'attractions' && (
+              <PlaceList items={data.attractions} {...listProps} empty="등록된 관광지가 없습니다." />
+            )}
             {tab === 'stays' && <PlaceList items={data.stays} {...listProps} empty="등록된 숙소가 없습니다." />}
             {tab === 'festivals' && (
-              <PlaceList items={data.festivals ?? []} {...listProps} empty="앞으로 4개월 안에 열리는 축제·행사가 없습니다." />
+              <PlaceList
+                items={data.festivals ?? []}
+                {...listProps}
+                empty="앞으로 4개월 안에 열리는 축제·행사가 없습니다."
+              />
+            )}
+            {tab === 'courses' && (
+              <RegionCourses
+                courses={courses}
+                selectedId={selectedCourseId}
+                onSelect={onSelectCourse}
+                focusedId={focusedId}
+                onFocusStop={onFocusPlace}
+                onSaveAll={onSaveCourse}
+                isFavorite={isFavorite}
+              />
             )}
             {tab === 'restaurants' && (
               <>
@@ -356,7 +411,8 @@ export default function PlacePanel({
             <p className="source muted">
               출처: 한국관광공사 TourAPI, 카카오 로컬
               {meta?.sources?.weather ? ', 기상청' : ''}
-              {meta?.sources?.naver ? ', 네이버 검색' : ''} · 갱신 {new Date(data.updatedAt).toLocaleDateString('ko-KR')}
+              {meta?.sources?.naver ? ', 네이버 검색' : ''} · 갱신{' '}
+              {new Date(data.updatedAt).toLocaleDateString('ko-KR')}
               <br />
               영업 여부·시간과 행사 일정은 방문 전 공식 정보를 확인하세요.
             </p>

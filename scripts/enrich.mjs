@@ -1,6 +1,7 @@
 // fetch-data.mjs가 만든 장소 데이터에 부가 정보를 조금씩 쌓아 붙인다.
 //   1) 장소 상세 (TourAPI detailCommon2·detailIntro2·detailImage2) → public/data/details/{contentid}.json
-//   2) 네이버 블로그 언급 수 (네이버 검색 API)                     → 장소의 blog 필드
+//   2) 관광공사 추천 여행코스 (TourAPI 여행코스 + detailInfo2)      → 지역 데이터의 courses
+//   3) 네이버 블로그 언급 수 (네이버 검색 API)                     → 장소의 blog 필드
 //
 // 두 API 모두 일일 호출 한도가 있어 한 번에 전부 받을 수 없다. 추천순 상위 장소부터
 // 하루 한도 안에서 받아 .cache/enrich/state.json에 기록하고, 다음 실행 때 이어서 받는다.
@@ -14,7 +15,7 @@
 //   NAVER_DAILY_CALLS    (선택) 하루 네이버 검색 호출 수, 기본 20000 (한도 25,000)
 //   NAVER_TIME_BUDGET_MIN (선택) 한 번 실행에서 네이버 수집에 쓸 최대 시간(분), 기본 20
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
-import { sortPlaces } from '../src/sort.js';
+import { distanceKm, sortPlaces } from '../src/sort.js';
 
 const ROOT = new URL('../', import.meta.url);
 const PLACES_DIR = new URL('public/data/places/', ROOT);
@@ -32,6 +33,8 @@ const NAVER_DAILY_CALLS = Number(process.env.NAVER_DAILY_CALLS) || 20000;
 const DETAIL_MAX_AGE_DAYS = 60;
 const FESTIVAL_DETAIL_MAX_AGE_DAYS = 7;
 const BLOG_MAX_AGE_DAYS = 14;
+const COURSE_DAILY = Number(process.env.COURSE_DAILY) || 900; // detailInfo2 일 1,000회 한도 아래
+const COURSE_MAX_AGE_DAYS = 30;
 const NAVER_CONCURRENCY = 4;
 const NAVER_MIN_INTERVAL_MS = 125; // 초당 8회 (네이버 검색 API 초당 호출 제한 아래)
 const NAVER_TIME_BUDGET_MS = (Number(process.env.NAVER_TIME_BUDGET_MIN) || 20) * 60e3; // 한 번 실행에 쓸 최대 시간
@@ -60,7 +63,9 @@ if (state.blogVersion !== BLOG_VERSION) state.blog = {};
 state.blogVersion = BLOG_VERSION;
 state.blog ??= {}; // placeId -> { n, at }
 state.details ??= {}; // contentId -> at
-if (state.quota?.date !== TODAY) state.quota = { date: TODAY, detailPlaces: 0, naver: 0 };
+state.courses ??= {}; // courseId -> { title, image, subs: [{ id, name }], at }
+if (state.quota?.date !== TODAY) state.quota = { date: TODAY, detailPlaces: 0, naver: 0, courses: 0 };
+state.quota.courses ??= 0;
 
 const files = (await readdir(PLACES_DIR)).filter((f) => /^\d+\.json$/.test(f));
 const regions = JSON.parse(await readFile(new URL('public/data/regions.json', ROOT), 'utf8'));
@@ -296,15 +301,98 @@ async function enrichBlog() {
   console.log(`블로그 언급: 이번 실행 ${done}곳, 누적 ${Object.keys(state.blog).length}곳${timedOut}${error ? ` (오류: ${error})` : ''}`);
 }
 
+// ---------- 2) 추천 여행코스 ----------
+
+async function enrichCourses() {
+  if (!TOUR_KEY) return;
+  // 코스 목록 (1,000여 개라 2회 호출)
+  let list = [];
+  try {
+    for (let page = 1; ; page++) {
+      const items = await tour('areaBasedList2', { contentTypeId: '25', numOfRows: '1000', pageNo: String(page), arrange: 'Q' });
+      list.push(...items);
+      if (items.length < 1000) break;
+    }
+  } catch (e) {
+    return console.error(`여행코스 목록 실패: ${e.message}`);
+  }
+  const alive = new Set(list.map((c) => c.contentid));
+  for (const id of Object.keys(state.courses)) if (!alive.has(id)) delete state.courses[id];
+
+  const budget = COURSE_DAILY - state.quota.courses;
+  const todo = list.filter((c) => ageDays(state.courses[c.contentid]?.at) > COURSE_MAX_AGE_DAYS).slice(0, Math.max(0, budget));
+  let done = 0;
+  let error;
+  await mapLimit(todo, TOUR_CONCURRENCY, async (c) => {
+    try {
+      const subs = await tour('detailInfo2', { contentId: c.contentid, contentTypeId: '25' });
+      state.courses[c.contentid] = {
+        title: c.title,
+        image: (c.firstimage2 || c.firstimage)?.replace(/^http:\/\//, 'https://') || undefined,
+        subs: subs
+          .sort((a, b) => Number(a.subnum) - Number(b.subnum))
+          .map((s) => ({ id: s.subcontentid, name: s.subname })),
+        at: new Date().toISOString(),
+      };
+      state.quota.courses++;
+      done++;
+    } catch (e) {
+      error ??= e.message;
+      if (e instanceof QuotaError) return false;
+    }
+  });
+  console.log(`여행코스: 이번 실행 ${done}개, 누적 ${Object.keys(state.courses).length}/${list.length}개${error ? ` (오류: ${error})` : ''}`);
+}
+
+// 코스의 들르는 곳을 우리 장소 데이터에서 찾아 좌표를 붙이고, 들르는 곳이 있는 지역마다 넣는다
+function attachCourses() {
+  const index = new Map(); // contentId -> { place, code }
+  for (const [code, data] of regionData) {
+    for (const list of Object.keys(TOUR_LISTS)) {
+      for (const p of data[list] ?? []) index.set(p.id.replace(/^tour-/, ''), { p, code });
+    }
+  }
+  const byRegion = new Map();
+  for (const [cid, c] of Object.entries(state.courses)) {
+    const located = c.subs.map((s) => ({ s, hit: index.get(s.id) })).filter((x) => x.hit);
+    if (located.length < 2) continue;
+    const stops = located.map(({ s, hit }) => ({
+      id: hit.p.id,
+      title: s.name || hit.p.title,
+      lat: hit.p.lat,
+      lng: hit.p.lng,
+      image: hit.p.image,
+    }));
+    let km = 0;
+    for (let i = 1; i < stops.length; i++) km += distanceKm(stops[i - 1], stops[i]);
+    const course = { id: `course-${cid}`, source: 'tour', title: c.title, image: c.image, stops, total: c.subs.length, km: Math.round(km * 10) / 10 };
+    const counts = new Map();
+    for (const { hit } of located) counts.set(hit.code, (counts.get(hit.code) ?? 0) + 1);
+    for (const [code, n] of counts) {
+      if (!byRegion.has(code)) byRegion.set(code, []);
+      byRegion.get(code).push({ n, course });
+    }
+  }
+  for (const [code, data] of regionData) {
+    data.courses = (byRegion.get(code) ?? [])
+      .sort((a, b) => b.n - a.n || b.course.stops.length - a.course.stops.length)
+      .map((x) => x.course);
+  }
+  return [...byRegion.keys()].length;
+}
+
 // ---------- 실행 ----------
 
 await enrichDetails();
+await enrichCourses();
 await enrichBlog();
 
 await mkdir(STATE_DIR, { recursive: true });
 await writeFile(STATE_FILE, JSON.stringify(state));
 
 // 장소 데이터에 결과를 붙인다 (매번 다시 붙여도 결과가 같다)
+const courseRegions = attachCourses();
+console.log(`여행코스: ${courseRegions}개 지역에 배치`);
 for (const [code, data] of regionData) {
   for (const list of ['attractions', 'stays', 'restaurants', 'tourRestaurants', 'festivals']) {
     for (const p of data[list] ?? []) {

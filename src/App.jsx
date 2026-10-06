@@ -4,6 +4,7 @@ import KakaoMap from './KakaoMap.jsx';
 import PlacePanel from './PlacePanel.jsx';
 import RegionSearch from './RegionSearch.jsx';
 import RouteCard from './RouteCard.jsx';
+import { autoCourse } from './autoCourse.js';
 import { legRoute, optimizeOrder } from './course.js';
 import { useFavorites } from './favorites.js';
 import { MODES, getRoute, modeAvailable } from './routing.js';
@@ -39,7 +40,7 @@ function savedSidebarWidth() {
 
 // 공유 링크로 들어왔을 때의 첫 상태. 위치 권한이 필요한 정렬은 링크만으로 권한 요청이 뜨지 않게 기본값으로 바꾼다.
 const initial = readUrlState();
-if (!['attractions', 'restaurants', 'stays', 'festivals'].includes(initial.tab)) initial.tab = 'attractions';
+if (!['attractions', 'restaurants', 'stays', 'festivals', 'courses'].includes(initial.tab)) initial.tab = 'attractions';
 if (!SORTS.some((s) => s.key === initial.sort) || initial.sort === 'distance' || initial.sort === 'time') {
   initial.sort = 'recommended';
 }
@@ -63,8 +64,9 @@ export default function App() {
   const [resizing, setResizing] = useState(false);
   const [toast, setToast] = useState(null);
   const pendingPlace = useRef(initial.place); // 공유 링크의 장소: 데이터가 오면 선택한다
+  const [selectedCourseId, setSelectedCourseId] = useState(initial.course); // 지역 추천 코스
 
-  const { favorites, setFavorites, isFavorite, toggleFavorite } = useFavorites();
+  const { favorites, setFavorites, isFavorite, toggleFavorite, addFavorites } = useFavorites();
   const [courseMode, setCourseMode] = useState('car');
   const [fromMyLocation, setFromMyLocation] = useState(true);
   const [courseLegs, setCourseLegs] = useState([]);
@@ -106,11 +108,16 @@ export default function App() {
 
   useEffect(() => {
     getJson('regions.json').then(setRegions).catch(console.error);
-    getJson('places/_meta.json').then(setMeta).catch(() => setMeta(null));
+    getJson('places/_meta.json')
+      .then(setMeta)
+      .catch(() => setMeta(null));
   }, []);
 
+  const firstLoad = useRef(true);
   useEffect(() => {
     setFocusedId(null);
+    if (firstLoad.current) firstLoad.current = false;
+    else setSelectedCourseId(null);
     if (!selectedCode) {
       setData(null);
       setStatus('idle');
@@ -129,7 +136,7 @@ export default function App() {
         pendingPlace.current = null;
         const list = id && LIST_KEYS.find((k) => d[k].some((p) => p.id === id));
         if (list) {
-          setTab(tabOfList(list));
+          setTab((t) => (t === 'courses' ? t : tabOfList(list)));
           setFocusedId(id);
         }
       })
@@ -149,8 +156,15 @@ export default function App() {
   // ---------- 주소(공유 링크) 동기화 ----------
 
   useEffect(() => {
-    writeUrlState({ region: selectedCode, tab, place: view === 'explore' ? focusedId : null, sort, view });
-  }, [selectedCode, tab, focusedId, sort, view]);
+    writeUrlState({
+      region: selectedCode,
+      tab,
+      place: view === 'explore' ? focusedId : null,
+      course: view === 'explore' && tab === 'courses' ? selectedCourseId : null,
+      sort,
+      view,
+    });
+  }, [selectedCode, tab, focusedId, selectedCourseId, sort, view]);
 
   const showToast = useCallback((msg) => {
     if (!msg) return;
@@ -158,10 +172,7 @@ export default function App() {
     setTimeout(() => setToast((t) => (t === msg ? null : t)), 2000);
   }, []);
 
-  const share = useCallback(
-    async (title) => showToast(await shareCurrentUrl(title ?? document.title)),
-    [showToast],
-  );
+  const share = useCallback(async (title) => showToast(await shareCurrentUrl(title ?? document.title)), [showToast]);
 
   // ---------- 내 위치 ----------
 
@@ -188,8 +199,28 @@ export default function App() {
   const tabItems = useMemo(() => {
     if (!data || status !== 'ready') return [];
     if (tab === 'restaurants') return [...data.restaurants, ...data.tourRestaurants];
+    if (tab === 'courses') return [];
     return data[tab] ?? [];
   }, [data, status, tab]);
+
+  // 지역 추천 코스: 자동 추천 1개 + 관광공사 추천 코스
+  const regionCourses = useMemo(() => {
+    if (!data || status !== 'ready') return [];
+    return [autoCourse(region, data), ...(data.courses ?? [])].filter(Boolean);
+  }, [region, data, status]);
+  const selectedCourse = regionCourses.find((c) => c.id === selectedCourseId);
+
+  // id로 이 지역의 장소 원본 찾기 (코스의 들르는 곳 → 길찾기·상세·찜에 필요한 전체 정보)
+  const findPlace = useCallback(
+    (id) => {
+      for (const k of LIST_KEYS) {
+        const hit = data?.[k]?.find((p) => p.id === id);
+        if (hit) return hit;
+      }
+      return null;
+    },
+    [data],
+  );
 
   // 도착 시간순: 직선 거리로 가까운 후보만 실제 경로 시간을 조회한다 (API 한도 절약)
   useEffect(() => {
@@ -231,13 +262,22 @@ export default function App() {
   const places = useMemo(() => {
     if (view !== 'explore' || !sorted || status !== 'ready') return [];
     if (tab === 'restaurants') return [...sorted.restaurants, ...sorted.tourRestaurants];
+    if (tab === 'courses') return [];
     return sorted[tab] ?? [];
   }, [view, sorted, status, tab]);
 
-  const focusedPlace = useMemo(
-    () => (view === 'explore' ? tabItems.find((p) => p.id === focusedId) : undefined),
-    [view, tabItems, focusedId],
-  );
+  const focusedPlace = useMemo(() => {
+    if (view !== 'explore' || !focusedId) return undefined;
+    if (tab !== 'courses') return tabItems.find((p) => p.id === focusedId);
+    const stop = selectedCourse?.stops.find((s) => s.id === focusedId);
+    if (!stop) return undefined;
+    return (
+      findPlace(stop.id) ?? {
+        ...stop,
+        url: `https://map.kakao.com/link/map/${encodeURIComponent(stop.title)},${stop.lat},${stop.lng}`,
+      }
+    );
+  }, [view, tab, tabItems, focusedId, selectedCourse, findPlace]);
 
   // 선택한 장소까지 자동차·대중교통·도보 경로를 모두 조회
   useEffect(() => {
@@ -276,9 +316,7 @@ export default function App() {
   useEffect(() => {
     if (view !== 'course') return;
     const stops = favorites;
-    const jobs = stops
-      .map((to, i) => ({ i, from: i === 0 ? courseStart : stops[i - 1], to }))
-      .filter((j) => j.from);
+    const jobs = stops.map((to, i) => ({ i, from: i === 0 ? courseStart : stops[i - 1], to })).filter((j) => j.from);
     setCourseLegs(stops.map((_, i) => (jobs.some((j) => j.i === i) ? { status: 'loading' } : null)));
     let cancelled = false;
     const queue = [...jobs];
@@ -297,9 +335,29 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, stopsKey, courseMode, courseStart]);
 
-  const course = useMemo(
-    () => (view === 'course' ? { stops: favorites, start: courseStart, legs: courseLegs } : null),
-    [view, favorites, courseStart, courseLegs],
+  const course = useMemo(() => {
+    if (view === 'course') return { stops: favorites, start: courseStart, legs: courseLegs };
+    // 지역 추천 코스 미리보기: 들르는 곳을 직선 점선으로 잇는다
+    if (tab === 'courses' && selectedCourse)
+      return { stops: selectedCourse.stops, start: null, legs: [], preview: true };
+    return null;
+  }, [view, favorites, courseStart, courseLegs, tab, selectedCourse]);
+
+  const saveCourse = useCallback(
+    (c) => {
+      const places = c.stops.map(
+        (s) =>
+          findPlace(s.id) ?? {
+            ...s,
+            source: 'tour',
+            url: `https://map.kakao.com/link/map/${encodeURIComponent(s.title)},${s.lat},${s.lng}`,
+          },
+      );
+      addFavorites(places, selectedCode);
+      setFocusedId(null);
+      setView('course');
+    },
+    [findPlace, addFavorites, selectedCode],
   );
 
   const reorder = useCallback(
@@ -332,6 +390,12 @@ export default function App() {
   const changeTab = useCallback((t) => {
     setTab(t);
     setFocusedId(null);
+    setSelectedCourseId(null);
+  }, []);
+
+  const selectCourse = useCallback((id) => {
+    setSelectedCourseId(id);
+    setFocusedId(null);
   }, []);
 
   const changeSort = useCallback(
@@ -351,10 +415,7 @@ export default function App() {
           <button className="brand-home" onClick={() => selectRegion(null)} title="처음으로">
             <span className="brand-mark" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="20" height="20">
-                <path
-                  d="M12 22s7-6.6 7-12.2A7 7 0 0 0 5 9.8C5 15.4 12 22 12 22z"
-                  fill="currentColor"
-                />
+                <path d="M12 22s7-6.6 7-12.2A7 7 0 0 0 5 9.8C5 15.4 12 22 12 22z" fill="currentColor" />
                 <circle cx="12" cy="9.8" r="2.6" fill="#fff" />
               </svg>
             </span>
@@ -415,6 +476,10 @@ export default function App() {
             favoriteCount={favorites.length}
             onOpenCourse={openCourse}
             onShare={() => share(region ? `${region.fullName} 여행 정보` : undefined)}
+            courses={regionCourses}
+            selectedCourseId={selectedCourseId}
+            onSelectCourse={selectCourse}
+            onSaveCourse={saveCourse}
           />
         )}
       </aside>

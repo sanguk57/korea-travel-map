@@ -54,5 +54,13 @@ export function useFavorites() {
     );
   }, []);
 
-  return { favorites, setFavorites, isFavorite, toggleFavorite };
+  // 이미 담긴 곳은 건너뛰고 순서대로 추가
+  const addFavorites = useCallback((places, regionCode) => {
+    setFavorites((list) => {
+      const have = new Set(list.map((f) => f.id));
+      return [...list, ...places.filter((p) => !have.has(p.id)).map((p) => snapshot(p, regionCode))];
+    });
+  }, []);
+
+  return { favorites, setFavorites, isFavorite, toggleFavorite, addFavorites };
 }

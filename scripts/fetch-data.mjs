@@ -102,6 +102,7 @@ function normalizeTour(it) {
     lat,
     lng,
     image: https(it.firstimage2 || it.firstimage),
+    created: it.createdtime?.slice(0, 8),
     modified: it.modifiedtime?.slice(0, 8),
     url: kakaoMapLink(it.title, lat, lng),
   };
@@ -131,6 +132,7 @@ async function fetchKakaoRestaurants(region) {
   for (let i = 0; i < KAKAO_GRID; i++) {
     for (let j = 0; j < KAKAO_GRID; j++) {
       const rect = [minLng + i * dLng, minLat + j * dLat, minLng + (i + 1) * dLng, minLat + (j + 1) * dLat];
+      let cellRank = 0;
       for (let page = 1; page <= 3; page++) {
         const { documents, meta } = await kakaoCategory(rect, page);
         for (const d of documents) {
@@ -147,13 +149,18 @@ async function fetchKakaoRestaurants(region) {
             lat,
             lng,
             url: d.place_url,
+            cellRank: cellRank++,
           });
         }
         if (meta.is_end) break;
       }
     }
   }
-  return [...found.values()].slice(0, KAKAO_MAX_PER_REGION);
+  // 칸별 정확도 순위를 섞어 지역 전체의 추천 순위(rank)를 만든다
+  return [...found.values()]
+    .sort((a, b) => a.cellRank - b.cellRank)
+    .slice(0, KAKAO_MAX_PER_REGION)
+    .map(({ cellRank, ...p }, rank) => ({ ...p, rank }));
 }
 
 async function mapLimit(list, limit, fn) {

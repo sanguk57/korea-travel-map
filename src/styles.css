@@ -215,3 +215,24 @@ code { background: var(--surface-2); padding: 1px 6px; border-radius: 6px; font-
   .thumb { width: 76px; height: 76px; }
   .map-hint { top: 12px; font-size: 12px; }
 }
+
+/* 정렬 */
+.sorts {
+  display: flex; gap: 6px; margin: -4px -20px 0; padding: 0 20px 12px; overflow-x: auto; scrollbar-width: none;
+}
+.sorts::-webkit-scrollbar { display: none; }
+.sorts button {
+  flex: none; height: 30px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface); font-size: 13px; font-weight: 500; color: var(--muted); cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.sorts button:hover { color: var(--ink); border-color: #cfd3de; }
+.sorts button.active { background: var(--ink); border-color: var(--ink); color: #fff; font-weight: 600; }
+.sort-note { margin: 10px 20px 2px; font-size: 12px; color: var(--muted); }
+.distance {
+  margin-left: 6px; padding: 1px 7px; border-radius: 999px; vertical-align: 1px;
+  font-size: 11px; font-weight: 700; background: var(--brand-soft); color: var(--brand);
+}
+@media (max-width: 820px) {
+  .sorts { margin: -4px -16px 0; padding: 0 16px 12px; }
+}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import KakaoMap from './KakaoMap.jsx';
 import PlacePanel from './PlacePanel.jsx';
 import RegionSearch from './RegionSearch.jsx';
+import { sortPlaces } from './sort.js';
 
 const DATA = `${import.meta.env.BASE_URL}data/`;
 
@@ -19,6 +20,9 @@ export default function App() {
   const [status, setStatus] = useState('idle'); // idle | loading | ready | error
   const [tab, setTab] = useState('attractions');
   const [focusedId, setFocusedId] = useState(null);
+  const [sort, setSort] = useState('recommended');
+  const [origin, setOrigin] = useState(null); // 내 위치 {lat, lng}
+  const [geoStatus, setGeoStatus] = useState('idle'); // idle | pending | ok | denied
 
   useEffect(() => {
     getJson('regions.json').then(setRegions).catch(console.error);
@@ -52,17 +56,50 @@ export default function App() {
 
   const region = useMemo(() => regions.find((r) => r.code === selectedCode), [regions, selectedCode]);
 
+  const sorted = useMemo(() => {
+    if (!data) return null;
+    const by = (items) => sortPlaces(items, sort, origin);
+    return {
+      ...data,
+      attractions: by(data.attractions),
+      stays: by(data.stays),
+      restaurants: by(data.restaurants),
+      tourRestaurants: by(data.tourRestaurants),
+    };
+  }, [data, sort, origin]);
+
   // 현재 탭에서 지도에 찍을 장소들
   const places = useMemo(() => {
-    if (!data || status !== 'ready') return [];
-    if (tab === 'restaurants') return [...data.restaurants, ...data.tourRestaurants];
-    return data[tab];
-  }, [data, status, tab]);
+    if (!sorted || status !== 'ready') return [];
+    if (tab === 'restaurants') return [...sorted.restaurants, ...sorted.tourRestaurants];
+    return sorted[tab];
+  }, [sorted, status, tab]);
 
   const changeTab = useCallback((t) => {
     setTab(t);
     setFocusedId(null);
   }, []);
+
+  const changeSort = useCallback(
+    (key) => {
+      setSort(key);
+      if (key !== 'distance' || origin || geoStatus === 'pending') return;
+      if (!navigator.geolocation) {
+        setGeoStatus('denied');
+        return;
+      }
+      setGeoStatus('pending');
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setOrigin({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          setGeoStatus('ok');
+        },
+        () => setGeoStatus('denied'),
+        { timeout: 10000, maximumAge: 300000 },
+      );
+    },
+    [origin, geoStatus],
+  );
 
   return (
     <div className="app">
@@ -88,11 +125,15 @@ export default function App() {
         <PlacePanel
           regions={regions}
           region={region}
-          data={data}
+          data={sorted}
           status={status}
           meta={meta}
           tab={tab}
           onTabChange={changeTab}
+          sort={sort}
+          onSortChange={changeSort}
+          origin={origin}
+          geoStatus={geoStatus}
           onSelectRegion={setSelectedCode}
           focusedId={focusedId}
           onFocusPlace={setFocusedId}

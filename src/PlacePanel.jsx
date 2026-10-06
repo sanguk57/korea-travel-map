@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { SORTS, distanceKm } from './sort.js';
 
 export const TABS = [
   { key: 'attractions', label: '관광지', icon: '🏞️' },
@@ -20,7 +21,9 @@ const FEATURED = [
 const formatDate = (yyyymmdd) =>
   yyyymmdd ? `${yyyymmdd.slice(0, 4)}.${yyyymmdd.slice(4, 6)}.${yyyymmdd.slice(6, 8)}` : null;
 
-function PlaceItem({ place, focused, onFocus }) {
+const formatKm = (km) => (km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(km < 10 ? 1 : 0)}km`);
+
+function PlaceItem({ place, focused, onFocus, sort, origin }) {
   const ref = useRef(null);
 
   useEffect(() => {
@@ -37,7 +40,10 @@ function PlaceItem({ place, focused, onFocus }) {
         </div>
       )}
       <div className="place-body">
-        <div className="place-title">{place.title}</div>
+        <div className="place-title">
+          {place.title}
+          {sort === 'distance' && origin && <span className="distance">{formatKm(distanceKm(origin, place))}</span>}
+        </div>
         {place.category && <div className="place-cat">{place.category.split(' > ').pop()}</div>}
         <div className="place-addr">{place.addr}</div>
         <div className="place-actions">
@@ -49,19 +55,23 @@ function PlaceItem({ place, focused, onFocus }) {
               ☎ {place.tel}
             </a>
           )}
-          {place.modified && <span className="muted small">수정 {formatDate(place.modified)}</span>}
+          {sort === 'newest' && place.created ? (
+            <span className="muted small">등록 {formatDate(place.created)}</span>
+          ) : (
+            place.modified && <span className="muted small">수정 {formatDate(place.modified)}</span>
+          )}
         </div>
       </div>
     </li>
   );
 }
 
-function PlaceList({ items, focusedId, onFocusPlace, empty }) {
+function PlaceList({ items, focusedId, onFocusPlace, empty, sort, origin }) {
   if (items.length === 0) return <p className="empty-msg">{empty}</p>;
   return (
     <ul className="places">
       {items.map((p) => (
-        <PlaceItem key={p.id} place={p} focused={p.id === focusedId} onFocus={onFocusPlace} />
+        <PlaceItem key={p.id} place={p} focused={p.id === focusedId} onFocus={onFocusPlace} sort={sort} origin={origin} />
       ))}
     </ul>
   );
@@ -134,6 +144,10 @@ export default function PlacePanel({
   meta,
   tab,
   onTabChange,
+  sort,
+  onSortChange,
+  origin,
+  geoStatus,
   onSelectRegion,
   focusedId,
   onFocusPlace,
@@ -148,6 +162,7 @@ export default function PlacePanel({
     );
   }
 
+  const listProps = { sort, origin };
   const counts = data
     ? {
         attractions: data.attractions.length,
@@ -179,29 +194,48 @@ export default function PlacePanel({
             </button>
           ))}
         </nav>
+        <div className="sorts" role="radiogroup" aria-label="정렬">
+          {SORTS.map((s) => (
+            <button
+              key={s.key}
+              role="radio"
+              aria-checked={sort === s.key}
+              className={sort === s.key ? 'active' : ''}
+              title={s.hint}
+              onClick={() => onSortChange(s.key)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="panel-body">
+        {sort === 'distance' && geoStatus === 'pending' && <p className="sort-note">현재 위치를 확인하는 중…</p>}
+        {sort === 'distance' && geoStatus === 'denied' && (
+          <p className="notice">위치 권한이 없어 거리순으로 정렬할 수 없습니다. 브라우저에서 위치 접근을 허용해 주세요.</p>
+        )}
+        {sort !== 'distance' && <p className="sort-note">{SORTS.find((s) => s.key === sort)?.hint}</p>}
         {status === 'loading' && <Skeleton />}
         {status === 'error' && <p className="notice">이 지역의 데이터 파일을 찾을 수 없습니다.</p>}
         {status === 'ready' && data && (
           <>
             {tab === 'attractions' && (
-              <PlaceList items={data.attractions} focusedId={focusedId} onFocusPlace={onFocusPlace} empty="등록된 관광지가 없습니다." />
+              <PlaceList items={data.attractions} focusedId={focusedId} onFocusPlace={onFocusPlace} {...listProps} empty="등록된 관광지가 없습니다." />
             )}
             {tab === 'stays' && (
-              <PlaceList items={data.stays} focusedId={focusedId} onFocusPlace={onFocusPlace} empty="등록된 숙소가 없습니다." />
+              <PlaceList items={data.stays} focusedId={focusedId} onFocusPlace={onFocusPlace} {...listProps} empty="등록된 숙소가 없습니다." />
             )}
             {tab === 'restaurants' && (
               <>
                 {data.restaurants.length > 0 && (
                   <>
                     <h3 className="section">카카오맵 음식점</h3>
-                    <PlaceList items={data.restaurants} focusedId={focusedId} onFocusPlace={onFocusPlace} />
+                    <PlaceList items={data.restaurants} focusedId={focusedId} onFocusPlace={onFocusPlace} {...listProps} />
                   </>
                 )}
                 <h3 className="section">한국관광공사 추천 음식점</h3>
-                <PlaceList items={data.tourRestaurants} focusedId={focusedId} onFocusPlace={onFocusPlace} empty="등록된 음식점이 없습니다." />
+                <PlaceList items={data.tourRestaurants} focusedId={focusedId} onFocusPlace={onFocusPlace} {...listProps} empty="등록된 음식점이 없습니다." />
               </>
             )}
             <p className="source muted">

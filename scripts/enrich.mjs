@@ -2,6 +2,7 @@
 //   1) 장소 상세 (TourAPI detailCommon2·detailIntro2·detailImage2) → public/data/details/{contentid}.json
 //   2) 관광공사 추천 여행코스 (TourAPI 여행코스 + detailInfo2)      → 지역 데이터의 courses
 //   3) 네이버 블로그 언급 수 (네이버 검색 API)                     → 장소의 blog 필드
+//   4) 사진 없는 장소의 사진 (카카오 이미지 검색, KAKAO_REST_KEY)    → 장소의 image·photos 필드
 //
 // 두 API 모두 일일 호출 한도가 있어 한 번에 전부 받을 수 없다. 추천순 상위 장소부터
 // 하루 한도 안에서 받아 .cache/enrich/state.json에 기록하고, 다음 실행 때 이어서 받는다.
@@ -34,6 +35,11 @@ const DETAIL_MAX_AGE_DAYS = 60;
 const FESTIVAL_DETAIL_MAX_AGE_DAYS = 7;
 const BLOG_MAX_AGE_DAYS = 14;
 const COURSE_DAILY = Number(process.env.COURSE_DAILY) || 900; // detailInfo2 일 1,000회 한도 아래
+const KAKAO_KEY = process.env.KAKAO_REST_KEY?.trim();
+const IMAGE_DAILY = Number(process.env.IMAGE_DAILY) || 10000;
+const IMAGE_MAX_AGE_DAYS = 90;
+const IMAGE_TIME_BUDGET_MS = (Number(process.env.IMAGE_TIME_BUDGET_MIN) || 15) * 60e3;
+const IMAGE_CONCURRENCY = 5;
 const COURSE_MAX_AGE_DAYS = 30;
 const NAVER_CONCURRENCY = 4;
 const NAVER_MIN_INTERVAL_MS = 125; // 초당 8회 (네이버 검색 API 초당 호출 제한 아래)
@@ -64,8 +70,10 @@ state.blogVersion = BLOG_VERSION;
 state.blog ??= {}; // placeId -> { n, at }
 state.details ??= {}; // contentId -> at
 state.courses ??= {}; // courseId -> { title, image, subs: [{ id, name }], at }
+state.images ??= {}; // placeId -> { photos: [{ t: 카카오 썸네일, src: 출처 글 }], at }
 if (state.quota?.date !== TODAY) state.quota = { date: TODAY, detailPlaces: 0, naver: 0, courses: 0 };
 state.quota.courses ??= 0;
+state.quota.images ??= 0;
 
 const files = (await readdir(PLACES_DIR)).filter((f) => /^\d+\.json$/.test(f));
 const regions = JSON.parse(await readFile(new URL('public/data/regions.json', ROOT), 'utf8'));
@@ -381,10 +389,57 @@ function attachCourses() {
   return [...byRegion.keys()].length;
 }
 
+// ---------- 4) 사진 없는 장소 사진 채우기 ----------
+
+const https = (u) => u?.replace(/^http:\/\//, 'https://');
+
+async function kakaoImages(query) {
+  const res = await fetch(`https://dapi.kakao.com/v2/search/image?${new URLSearchParams({ query, size: '3', sort: 'accuracy' })}`, {
+    headers: { Authorization: `KakaoAK ${KAKAO_KEY}` },
+  });
+  if (res.status === 401 || res.status === 403) throw new QuotaError(`카카오 이미지 검색 인증 오류 (HTTP ${res.status})`);
+  if (res.status === 429) throw new QuotaError('카카오 이미지 검색 한도 초과');
+  if (!res.ok) throw new Error(`카카오 이미지 검색 오류 (HTTP ${res.status})`);
+  const { documents = [] } = await res.json();
+  return documents.map((d) => ({ t: https(d.thumbnail_url), src: d.doc_url }));
+}
+
+async function enrichImages() {
+  if (!KAKAO_KEY) return console.warn('KAKAO_REST_KEY가 없어 사진 채우기를 건너뜁니다.');
+  const budget = IMAGE_DAILY - state.quota.images;
+  if (budget <= 0) return console.log(`사진 채우기: 오늘 한도(${IMAGE_DAILY}회) 소진`);
+
+  // 맛집(카카오, 사진 없음)을 먼저, 그다음 관광공사 데이터 중 사진 없는 곳
+  const lists = ['restaurants', 'tourRestaurants', 'attractions', 'stays', 'festivals'];
+  const queue = priorityQueue(lists, (p, _list, code) =>
+    !p.image && ageDays(state.images[p.id]?.at) > IMAGE_MAX_AGE_DAYS
+      ? { id: p.id, query: `${shortRegion(regionName.get(code) ?? '')} ${blogName(p.title)}`.trim() }
+      : null,
+  ).slice(0, budget);
+
+  let done = 0;
+  let error;
+  const deadline = Date.now() + IMAGE_TIME_BUDGET_MS;
+  await mapLimit(queue, IMAGE_CONCURRENCY, async ({ id, query }) => {
+    if (Date.now() > deadline) return false;
+    try {
+      state.images[id] = { photos: await kakaoImages(query), at: new Date().toISOString() };
+      state.quota.images++;
+      done++;
+    } catch (e) {
+      error ??= e.message;
+      if (e instanceof QuotaError) return false;
+    }
+  });
+  const filled = Object.values(state.images).filter((x) => x.photos.length).length;
+  console.log(`사진 채우기: 이번 실행 ${done}곳, 누적 ${filled}곳${Date.now() > deadline ? ' (시간 한도 도달)' : ''}${error ? ` (오류: ${error})` : ''}`);
+}
+
 // ---------- 실행 ----------
 
 await enrichDetails();
 await enrichCourses();
+await enrichImages();
 await enrichBlog();
 
 await mkdir(STATE_DIR, { recursive: true });
@@ -399,6 +454,13 @@ for (const [code, data] of regionData) {
       const blog = state.blog[p.id]?.n;
       if (blog != null) p.blog = blog;
       if (p.source === 'tour' && state.details[p.id.replace(/^tour-/, '')]) p.detail = true;
+      // 사진 없는 곳: 웹 이미지 검색 결과 (원래 사진이 있으면 건드리지 않는다)
+      const found = state.images[p.id]?.photos;
+      if (found?.length && (!p.image || p.webImage)) {
+        p.image = found[0].t;
+        p.webImage = true;
+        p.photos = found;
+      }
     }
   }
   await writeFile(new URL(`${code}.json`, PLACES_DIR), JSON.stringify(data));

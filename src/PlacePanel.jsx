@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import PlaceDetail from './PlaceDetail.jsx';
+import { naverPlace } from './mapLinks.js';
 import RegionCourses from './RegionCourses.jsx';
 import Weather from './Weather.jsx';
 import { MODES, formatMinutes, modeAvailable } from './routing.js';
@@ -58,7 +59,7 @@ export function FavButton({ active, onClick, className = '' }) {
   );
 }
 
-function PlaceItem({ place, focused, onFocus, sort, origin, eta, travelMode, favorite, onToggleFavorite }) {
+function PlaceItem({ place, focused, onFocus, sort, origin, eta, travelMode, favorite, onToggleFavorite, regionName }) {
   const ref = useRef(null);
 
   useEffect(() => {
@@ -100,7 +101,17 @@ function PlaceItem({ place, focused, onFocus, sort, origin, eta, travelMode, fav
               rel="noreferrer"
               onClick={(e) => e.stopPropagation()}
             >
-              지도 보기 ↗
+              카카오맵 ↗
+            </a>
+            <a
+              className="chip-link naver"
+              href={naverPlace(regionName, place.title)}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title="네이버 지도홈 (리뷰·메뉴·영업시간)"
+            >
+              네이버 ↗
             </a>
             {place.tel && (
               <a className="chip-link" href={`tel:${place.tel}`} onClick={(e) => e.stopPropagation()}>
@@ -117,7 +128,7 @@ function PlaceItem({ place, focused, onFocus, sort, origin, eta, travelMode, fav
         </div>
         <FavButton active={favorite} onClick={() => onToggleFavorite(place)} />
       </div>
-      {focused && <PlaceDetail place={place} />}
+      {focused && <PlaceDetail place={place} regionName={regionName} />}
     </li>
   );
 }
@@ -133,6 +144,7 @@ function PlaceList({
   travelMode,
   isFavorite,
   onToggleFavorite,
+  regionName,
 }) {
   if (items.length === 0) return <p className="empty-msg">{empty}</p>;
   return (
@@ -149,6 +161,7 @@ function PlaceList({
           travelMode={travelMode}
           favorite={isFavorite(p.id)}
           onToggleFavorite={onToggleFavorite}
+          regionName={regionName}
         />
       ))}
     </ul>
@@ -340,7 +353,17 @@ export default function PlacePanel({
   const sorts = SORTS.filter((s) => !s.needs || meta?.sources?.[s.needs]);
   const needsLocation = sort === 'distance' || sort === 'time';
   const toggle = (p) => onToggleFavorite(p, region.code);
-  const listProps = { focusedId, onFocusPlace, sort, origin, etas, travelMode, isFavorite, onToggleFavorite: toggle };
+  const listProps = {
+    focusedId,
+    onFocusPlace,
+    sort,
+    origin,
+    etas,
+    travelMode,
+    isFavorite,
+    onToggleFavorite: toggle,
+    regionName: region.name,
+  };
   const counts = data
     ? {
         attractions: data.attractions.length,

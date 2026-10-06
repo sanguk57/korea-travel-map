@@ -25,3 +25,10 @@ export function naverDirections(mode, from, to) {
   const start = from ? point(from, '내 위치') : '-';
   return `https://map.naver.com/p/directions/${start}/${point(to, '도착지')}/-/${NAVER_MODE[mode] ?? 'car'}`;
 }
+
+// 네이버 지도에서 "지역 이름 + 장소 이름"으로 검색하면 결과가 하나일 때 그 장소의 지도홈(리뷰·메뉴·영업시간)이 바로 열린다
+const shortRegion = (name = '') => (/[시군]$/.test(name) && name.length > 2 ? name.slice(0, -1) : name);
+
+export function naverPlace(regionName, title) {
+  return `https://map.naver.com/p/search/${encodeURIComponent(`${shortRegion(regionName)} ${title}`.trim())}`;
+}

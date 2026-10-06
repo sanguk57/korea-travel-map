@@ -1,7 +1,8 @@
 // 내 위치 → 장소 이동 시간과 경로.
 //   자동차·도보: TMAP (SK open API)   VITE_TMAP_APP_KEY
 //   대중교통:     ODsay LAB           VITE_ODSAY_API_KEY
-// 두 키 모두 브라우저용이며, 각 콘솔에서 사용 도메인을 제한해 보호한다.
+// 두 키 모두 브라우저에 노출된다. ODsay는 Web 키 URI 제한, TMAP은 무료 요금제로 피해를 막는다.
+// 발급·보안 안내: docs/route-api-keys.md
 import { distanceKm } from './sort.js';
 
 const TMAP_KEY = import.meta.env.VITE_TMAP_APP_KEY;

@@ -67,6 +67,14 @@ export default function KakaoMap({ regions, selectedCode, onSelectRegion, places
     };
   }, []);
 
+  // 사이드바 폭이 바뀌면 지도 크기를 다시 계산한다
+  useEffect(() => {
+    if (!ready) return;
+    const ro = new ResizeObserver(() => mapRef.current.relayout());
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, [ready]);
+
   // 시·군·구 경계 그리기
   useEffect(() => {
     if (!ready || regions.length === 0) return;

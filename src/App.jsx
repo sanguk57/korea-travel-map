@@ -17,6 +17,20 @@ async function getJson(path) {
 
 const etaKey = (mode, id) => `${mode}|${id}`;
 
+const SIDEBAR_MIN = 340;
+const SIDEBAR_MAX = 760;
+const SIDEBAR_DEFAULT = 440;
+const clampWidth = (w) => Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.min(w, window.innerWidth - 320)));
+
+function savedSidebarWidth() {
+  try {
+    const w = Number(localStorage.getItem('sidebarWidth'));
+    return w ? clampWidth(w) : SIDEBAR_DEFAULT;
+  } catch {
+    return SIDEBAR_DEFAULT;
+  }
+}
+
 export default function App() {
   const [regions, setRegions] = useState([]);
   const [meta, setMeta] = useState(null);
@@ -31,6 +45,39 @@ export default function App() {
   const [travelMode, setTravelMode] = useState('car');
   const [etas, setEtas] = useState({}); // "mode|placeId" -> { minutes } | { error }
   const [routes, setRoutes] = useState({}); // 선택한 장소의 mode -> { status, route?, error? }
+  const [sidebarWidth, setSidebarWidth] = useState(savedSidebarWidth);
+  const [resizing, setResizing] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sidebarWidth', String(sidebarWidth));
+    } catch {
+      // 저장 실패는 무시 (시크릿 모드 등)
+    }
+  }, [sidebarWidth]);
+
+  const startResize = useCallback((e) => {
+    e.preventDefault();
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+    setResizing(true);
+    const move = (ev) => setSidebarWidth(clampWidth(ev.clientX));
+    const up = () => {
+      setResizing(false);
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  }, []);
+
+  const resizeByKey = useCallback((e) => {
+    const step = e.shiftKey ? 80 : 20;
+    if (e.key === 'ArrowLeft') setSidebarWidth((w) => clampWidth(w - step));
+    else if (e.key === 'ArrowRight') setSidebarWidth((w) => clampWidth(w + step));
+  }, []);
 
   useEffect(() => {
     getJson('regions.json').then(setRegions).catch(console.error);
@@ -178,7 +225,7 @@ export default function App() {
   const shownRoute = routes[travelMode]?.status === 'ready' ? routes[travelMode].route : null;
 
   return (
-    <div className="app">
+    <div className={`app ${resizing ? 'resizing' : ''}`} style={{ '--sidebar-width': `${sidebarWidth}px` }}>
       <aside className="sidebar">
         <header className="brand">
           <button className="brand-home" onClick={() => setSelectedCode(null)} title="처음으로">
@@ -218,6 +265,20 @@ export default function App() {
           onFocusPlace={setFocusedId}
         />
       </aside>
+      <div
+        className={`resizer ${resizing ? 'dragging' : ''}`}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="사이드바 폭 조절"
+        aria-valuenow={sidebarWidth}
+        aria-valuemin={SIDEBAR_MIN}
+        aria-valuemax={SIDEBAR_MAX}
+        tabIndex={0}
+        title="드래그해서 폭 조절 (더블클릭: 기본 폭)"
+        onPointerDown={startResize}
+        onKeyDown={resizeByKey}
+        onDoubleClick={() => setSidebarWidth(clampWidth(SIDEBAR_DEFAULT))}
+      />
       <main className="map-area">
         <KakaoMap
           regions={regions}

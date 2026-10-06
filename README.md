@@ -39,25 +39,18 @@ GitHub Pages로 호스팅하며 서버 비용 없이 동작합니다.
    - `http://localhost:5173` (로컬 개발)
    - `https://<GitHub아이디>.github.io` (배포)
 
-### 길찾기 (선택, 무료 한도 있음)
-지도에서 장소를 고르면 내 위치에서 자동차·대중교통·도보로 걸리는 시간과 경로를 보여주고,
-목록을 **도착 시간순**으로 정렬할 수 있습니다. 키가 없으면 이 기능만 꺼집니다.
-
-- **TMAP** (자동차·도보): [SK open API](https://openapi.sk.com) → 앱 생성 → TMAP API 사용 신청 → 앱 키 → `TMAP_APP_KEY`
-- **ODsay LAB** (대중교통): [lab.odsay.com](https://lab.odsay.com) → 애플리케이션 등록 → **Web** 플랫폼 키 발급
-  (URI에 `http://localhost:5173`, `https://<GitHub아이디>.github.io` 등록) → `ODSAY_API_KEY`
-
-도착 시간순은 API 한도를 아끼기 위해 직선 거리로 가까운 15곳만 실제 경로 시간을 조회합니다.
-
 > JavaScript 키는 브라우저에 노출되는 게 정상입니다. 등록된 도메인에서만 동작하므로 안전합니다.
 > REST 키와 TourAPI 키는 절대 프론트엔드 코드에 넣지 마세요.
 
 ## 2. GitHub에 배포
 
 1. GitHub에 새 저장소를 만들고 push
-2. **Settings > Secrets and variables > Actions > New repository secret**에 3개 등록
+2. **Settings > Secrets and variables > Actions > New repository secret**에 3개 등록curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+source ~/.bashrc
+nvm install 22
+node -v   # v22.x 확인
+
    - `TOUR_API_KEY`, `KAKAO_REST_KEY`, `KAKAO_JS_KEY`
-   - (길찾기) `TMAP_APP_KEY`, `ODSAY_API_KEY`
 3. **Settings > Pages > Source**를 **GitHub Actions**로 선택
 4. **Actions** 탭에서 `Build & Deploy`를 실행(Run workflow)하거나 main에 push
 5. `https://<GitHub아이디>.github.io/<저장소명>/` 에서 확인

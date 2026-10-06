@@ -12,6 +12,7 @@
 //   DETAIL_DAILY_PLACES  (선택) 하루에 상세를 받을 장소 수, 기본 950
 //                        (장소당 detailCommon2·detailIntro2·detailImage2 각 1회. 개발계정은 기능별 일 1,000회)
 //   NAVER_DAILY_CALLS    (선택) 하루 네이버 검색 호출 수, 기본 20000 (한도 25,000)
+//   NAVER_TIME_BUDGET_MIN (선택) 한 번 실행에서 네이버 수집에 쓸 최대 시간(분), 기본 20
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { sortPlaces } from '../src/sort.js';
 
@@ -31,7 +32,9 @@ const NAVER_DAILY_CALLS = Number(process.env.NAVER_DAILY_CALLS) || 20000;
 const DETAIL_MAX_AGE_DAYS = 60;
 const FESTIVAL_DETAIL_MAX_AGE_DAYS = 7;
 const BLOG_MAX_AGE_DAYS = 14;
-const NAVER_CONCURRENCY = 5;
+const NAVER_CONCURRENCY = 4;
+const NAVER_MIN_INTERVAL_MS = 125; // 초당 8회 (네이버 검색 API 초당 호출 제한 아래)
+const NAVER_TIME_BUDGET_MS = (Number(process.env.NAVER_TIME_BUDGET_MIN) || 20) * 60e3; // 한 번 실행에 쓸 최대 시간
 const TOUR_CONCURRENCY = 3;
 
 const TODAY = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
@@ -51,6 +54,10 @@ async function loadState() {
 }
 
 const state = await loadState();
+// 블로그 수 계산 방식이 바뀌면 BLOG_VERSION을 올려 이전 값을 버린다
+const BLOG_VERSION = 2;
+if (state.blogVersion !== BLOG_VERSION) state.blog = {};
+state.blogVersion = BLOG_VERSION;
 state.blog ??= {}; // placeId -> { n, at }
 state.details ??= {}; // contentId -> at
 if (state.quota?.date !== TODAY) state.quota = { date: TODAY, detailPlaces: 0, naver: 0 };
@@ -204,14 +211,58 @@ async function enrichDetails() {
 // "서귀포시" → "서귀포", "해운대구"는 그대로 (구 이름만으로는 흔한 경우가 많아 붙여 둔다)
 const shortRegion = (name) => (/[시군]$/.test(name) && name.length > 2 ? name.slice(0, -1) : name);
 
-async function naverBlogTotal(query) {
-  const res = await fetch(`https://openapi.naver.com/v1/search/blog.json?${new URLSearchParams({ query, display: '1' })}`, {
-    headers: { 'X-Naver-Client-Id': NAVER_ID, 'X-Naver-Client-Secret': NAVER_SECRET },
-  });
-  if (res.status === 401 || res.status === 403) throw new QuotaError(`네이버 인증 오류 (HTTP ${res.status}) — Client ID/Secret과 검색 API 사용 설정을 확인하세요`);
-  if (res.status === 429) throw new QuotaError('네이버 호출 한도 초과');
-  if (!res.ok) throw new Error(`네이버 검색 오류 (HTTP ${res.status})`);
-  return (await res.json()).total;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// 모든 작업자가 공유하는 호출 간격 제한
+let nextSlot = 0;
+async function naverSlot() {
+  const now = Date.now();
+  const at = Math.max(now, nextSlot);
+  nextSlot = at + NAVER_MIN_INTERVAL_MS;
+  if (at > now) await sleep(at - now);
+}
+
+// 블로그 수를 셀 때 쓰는 이름: 연도·회차·괄호 설명을 뺀다 ("2026 제5회 OO축제(제주)" → "OO축제")
+const blogName = (title) =>
+  title
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/^\s*(?:19|20)\d{2}년?\s+/, '')
+    .replace(/제\s*\d+\s*회\s*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim() || title;
+
+const squash = (s) => s.replace(/<[^>]+>/g, '').replace(/&[a-z#0-9]+;/gi, '').replace(/\s+/g, '').toLowerCase();
+const BLOG_SAMPLE = 50;
+
+/**
+ * 네이버 블로그 검색은 단어를 나눠 느슨하게 찾기 때문에 total이 부풀려진다
+ * (예: "유성온날" → '유성', '온날'이 들어간 글 전부). 상위 BLOG_SAMPLE개 중 장소 이름이
+ * 그대로 들어간 비율을 total에 곱해 실제 언급 수를 추정한다. 호출 수는 그대로 1회.
+ */
+async function naverBlogTotal(query, name) {
+  const key = squash(name);
+  for (let attempt = 0; ; attempt++) {
+    await naverSlot();
+    const res = await fetch(`https://openapi.naver.com/v1/search/blog.json?${new URLSearchParams({ query, display: String(BLOG_SAMPLE) })}`, {
+      headers: { 'X-Naver-Client-Id': NAVER_ID, 'X-Naver-Client-Secret': NAVER_SECRET },
+    });
+    if (res.status === 401 || res.status === 403) {
+      throw new QuotaError(`네이버 인증 오류 (HTTP ${res.status}) — Client ID/Secret과 검색 API 사용 설정을 확인하세요`);
+    }
+    if (res.status === 429) {
+      const body = await res.json().catch(() => ({}));
+      // 010: 일일 사용 한도 초과 → 중단. 그 밖의 429는 초당 제한이라 잠시 쉬고 다시 시도
+      if (body.errorCode === '010') throw new QuotaError('네이버 일일 호출 한도 초과');
+      if (attempt >= 4) throw new Error(`네이버 초당 호출 제한 (${body.errorCode ?? '429'})`);
+      nextSlot = Date.now() + 1000 * 2 ** attempt;
+      continue;
+    }
+    if (!res.ok) throw new Error(`네이버 검색 오류 (HTTP ${res.status})`);
+    const { total, items = [] } = await res.json();
+    if (!items.length) return 0;
+    const hits = items.filter((i) => squash(`${i.title}${i.description}`).includes(key)).length;
+    return Math.round((total * hits) / items.length);
+  }
 }
 
 async function enrichBlog() {
@@ -221,24 +272,28 @@ async function enrichBlog() {
 
   const lists = ['festivals', 'attractions', 'restaurants', 'tourRestaurants', 'stays'];
   const queue = priorityQueue(lists, (p, _list, code) =>
-    ageDays(state.blog[p.id]?.at) > BLOG_MAX_AGE_DAYS ? { id: p.id, query: `${shortRegion(regionName.get(code) ?? '')} ${p.title}`.trim() } : null,
+    ageDays(state.blog[p.id]?.at) > BLOG_MAX_AGE_DAYS
+      ? { id: p.id, name: blogName(p.title), query: `${shortRegion(regionName.get(code) ?? '')} ${blogName(p.title)}`.trim() }
+      : null,
   ).slice(0, budget);
 
   let done = 0;
   let error;
-  await mapLimit(queue, NAVER_CONCURRENCY, async ({ id, query }) => {
+  const deadline = Date.now() + NAVER_TIME_BUDGET_MS;
+  await mapLimit(queue, NAVER_CONCURRENCY, async ({ id, query, name }) => {
+    if (Date.now() > deadline) return false; // 나머지는 다음 실행에서 이어 받는다
     try {
-      const n = await naverBlogTotal(query);
+      const n = await naverBlogTotal(query, name);
       state.blog[id] = { n, at: new Date().toISOString() };
       state.quota.naver++;
       done++;
-      await new Promise((r) => setTimeout(r, 120)); // 초당 호출 제한 여유
     } catch (e) {
       error ??= e.message;
       if (e instanceof QuotaError) return false;
     }
   });
-  console.log(`블로그 언급: 이번 실행 ${done}곳, 누적 ${Object.keys(state.blog).length}곳${error ? ` (오류: ${error})` : ''}`);
+  const timedOut = Date.now() > deadline ? ' (이번 실행 시간 한도 도달, 다음 실행에서 이어 받음)' : '';
+  console.log(`블로그 언급: 이번 실행 ${done}곳, 누적 ${Object.keys(state.blog).length}곳${timedOut}${error ? ` (오류: ${error})` : ''}`);
 }
 
 // ---------- 실행 ----------

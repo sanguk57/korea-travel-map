@@ -26,7 +26,7 @@ function pinImage(kakao, color, big) {
 const escapeHtml = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-export default function KakaoMap({ regions, selectedCode, onSelectRegion, places, tab, focusedId, onFocusPlace }) {
+export default function KakaoMap({ regions, selectedCode, onSelectRegion, places, tab, focusedId, onFocusPlace, origin, route }) {
   const containerRef = useRef(null);
   const kakaoRef = useRef(null);
   const mapRef = useRef(null);
@@ -36,6 +36,7 @@ export default function KakaoMap({ regions, selectedCode, onSelectRegion, places
   const focusedRef = useRef(null);
   const labelRef = useRef(null);
   const infoRef = useRef(null);
+  const meRef = useRef(null);
   const selectedRef = useRef(selectedCode);
   const callbacksRef = useRef({ onSelectRegion, onFocusPlace });
   const [ready, setReady] = useState(false);
@@ -57,6 +58,7 @@ export default function KakaoMap({ regions, selectedCode, onSelectRegion, places
         mapRef.current.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
         labelRef.current = new kakao.maps.CustomOverlay({ yAnchor: 1.6, zIndex: 3 });
         infoRef.current = new kakao.maps.CustomOverlay({ yAnchor: 2.6, zIndex: 4 });
+        meRef.current = new kakao.maps.CustomOverlay({ content: '<div class="me-dot"></div>', zIndex: 5 });
         setReady(true);
       })
       .catch((e) => !cancelled && setError(e.message));
@@ -184,6 +186,45 @@ export default function KakaoMap({ regions, selectedCode, onSelectRegion, places
     info.setMap(mapRef.current);
     mapRef.current.panTo(pos);
   }, [ready, places, focusedId]);
+
+  // 내 위치 표시
+  useEffect(() => {
+    if (!ready) return;
+    if (!origin) {
+      meRef.current.setMap(null);
+      return;
+    }
+    meRef.current.setPosition(new kakaoRef.current.maps.LatLng(origin.lat, origin.lng));
+    meRef.current.setMap(mapRef.current);
+  }, [ready, origin]);
+
+  // 선택한 이동 수단의 경로
+  useEffect(() => {
+    if (!ready || !route) return;
+    const kakao = kakaoRef.current;
+    const map = mapRef.current;
+    const bounds = new kakao.maps.LatLngBounds();
+    const lines = route.paths.flatMap(({ coords, color, dashed }) => {
+      const path = coords.map(([lat, lng]) => new kakao.maps.LatLng(lat, lng));
+      path.forEach((ll) => bounds.extend(ll));
+      return [
+        // 흰 테두리를 먼저 깔아 지도 위에서 잘 보이게 한다
+        new kakao.maps.Polyline({ map, path, strokeWeight: 9, strokeColor: '#ffffff', strokeOpacity: 0.9, zIndex: 1 }),
+        new kakao.maps.Polyline({
+          map,
+          path,
+          strokeWeight: 5,
+          strokeColor: color,
+          strokeOpacity: 0.95,
+          strokeStyle: dashed ? 'shortdash' : 'solid',
+          zIndex: 2,
+        }),
+      ];
+    });
+    if (origin) bounds.extend(new kakao.maps.LatLng(origin.lat, origin.lng));
+    if (!bounds.isEmpty()) map.setBounds(bounds, 60, 60, 220, 60);
+    return () => lines.forEach((l) => l.setMap(null));
+  }, [ready, route, origin]);
 
   return (
     <div className="map-wrap">

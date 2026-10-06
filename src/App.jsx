@@ -2,15 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import KakaoMap from './KakaoMap.jsx';
 import PlacePanel from './PlacePanel.jsx';
 import RegionSearch from './RegionSearch.jsx';
-import { sortPlaces } from './sort.js';
+import RouteCard from './RouteCard.jsx';
+import { MODES, getRoute, modeAvailable } from './routing.js';
+import { TIME_CANDIDATES, nearest, sortPlaces } from './sort.js';
 
 const DATA = `${import.meta.env.BASE_URL}data/`;
+const ETA_CONCURRENCY = 3;
 
 async function getJson(path) {
   const res = await fetch(DATA + path);
   if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
   return res.json();
 }
+
+const etaKey = (mode, id) => `${mode}|${id}`;
 
 export default function App() {
   const [regions, setRegions] = useState([]);
@@ -23,6 +28,9 @@ export default function App() {
   const [sort, setSort] = useState('recommended');
   const [origin, setOrigin] = useState(null); // 내 위치 {lat, lng}
   const [geoStatus, setGeoStatus] = useState('idle'); // idle | pending | ok | denied
+  const [travelMode, setTravelMode] = useState('car');
+  const [etas, setEtas] = useState({}); // "mode|placeId" -> { minutes } | { error }
+  const [routes, setRoutes] = useState({}); // 선택한 장소의 mode -> { status, route?, error? }
 
   useEffect(() => {
     getJson('regions.json').then(setRegions).catch(console.error);
@@ -56,9 +64,62 @@ export default function App() {
 
   const region = useMemo(() => regions.find((r) => r.code === selectedCode), [regions, selectedCode]);
 
+  const requestLocation = useCallback(() => {
+    if (origin || geoStatus === 'pending') return;
+    if (!navigator.geolocation) {
+      setGeoStatus('denied');
+      return;
+    }
+    setGeoStatus('pending');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setOrigin({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGeoStatus('ok');
+      },
+      () => setGeoStatus('denied'),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 },
+    );
+  }, [origin, geoStatus]);
+
+  // 현재 탭의 장소들(정렬 전)
+  const tabItems = useMemo(() => {
+    if (!data || status !== 'ready') return [];
+    if (tab === 'restaurants') return [...data.restaurants, ...data.tourRestaurants];
+    return data[tab];
+  }, [data, status, tab]);
+
+  // 도착 시간순: 직선 거리로 가까운 후보만 실제 경로 시간을 조회한다 (API 한도 절약)
+  useEffect(() => {
+    if (sort !== 'time' || !origin || !modeAvailable(travelMode)) return;
+    const todo = nearest(tabItems, origin, TIME_CANDIDATES).filter((p) => !(etaKey(travelMode, p.id) in etas));
+    if (todo.length === 0) return;
+    let cancelled = false;
+    const queue = [...todo];
+    const worker = async () => {
+      while (queue.length && !cancelled) {
+        const p = queue.shift();
+        let eta;
+        try {
+          eta = { minutes: (await getRoute(travelMode, origin, p)).minutes };
+        } catch (e) {
+          eta = { error: e.message };
+        }
+        if (!cancelled) setEtas((prev) => ({ ...prev, [etaKey(travelMode, p.id)]: eta }));
+      }
+    };
+    Array.from({ length: ETA_CONCURRENCY }, worker);
+    return () => {
+      cancelled = true;
+    };
+    // etas는 의도적으로 제외: 결과가 들어올 때마다 다시 돌 필요가 없다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sort, origin, travelMode, tabItems]);
+
+  const etaOf = useCallback((p) => etas[etaKey(travelMode, p.id)]?.minutes, [etas, travelMode]);
+
   const sorted = useMemo(() => {
     if (!data) return null;
-    const by = (items) => sortPlaces(items, sort, origin);
+    const by = (items) => sortPlaces(items, sort, origin, etaOf);
     return {
       ...data,
       attractions: by(data.attractions),
@@ -66,7 +127,7 @@ export default function App() {
       restaurants: by(data.restaurants),
       tourRestaurants: by(data.tourRestaurants),
     };
-  }, [data, sort, origin]);
+  }, [data, sort, origin, etaOf]);
 
   // 현재 탭에서 지도에 찍을 장소들
   const places = useMemo(() => {
@@ -74,6 +135,32 @@ export default function App() {
     if (tab === 'restaurants') return [...sorted.restaurants, ...sorted.tourRestaurants];
     return sorted[tab];
   }, [sorted, status, tab]);
+
+  const focusedPlace = useMemo(() => tabItems.find((p) => p.id === focusedId), [tabItems, focusedId]);
+
+  // 선택한 장소까지 자동차·대중교통·도보 경로를 모두 조회
+  useEffect(() => {
+    setRoutes({});
+    if (!focusedPlace || !origin) return;
+    let cancelled = false;
+    for (const { key } of MODES) {
+      if (!modeAvailable(key)) {
+        setRoutes((r) => ({ ...r, [key]: { status: 'error', error: '키 미설정' } }));
+        continue;
+      }
+      setRoutes((r) => ({ ...r, [key]: { status: 'loading' } }));
+      getRoute(key, origin, focusedPlace)
+        .then((route) => {
+          if (cancelled) return;
+          setRoutes((r) => ({ ...r, [key]: { status: 'ready', route } }));
+          setEtas((e) => ({ ...e, [etaKey(key, focusedPlace.id)]: { minutes: route.minutes } }));
+        })
+        .catch((e) => !cancelled && setRoutes((r) => ({ ...r, [key]: { status: 'error', error: e.message } })));
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [focusedPlace, origin]);
 
   const changeTab = useCallback((t) => {
     setTab(t);
@@ -83,23 +170,12 @@ export default function App() {
   const changeSort = useCallback(
     (key) => {
       setSort(key);
-      if (key !== 'distance' || origin || geoStatus === 'pending') return;
-      if (!navigator.geolocation) {
-        setGeoStatus('denied');
-        return;
-      }
-      setGeoStatus('pending');
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setOrigin({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-          setGeoStatus('ok');
-        },
-        () => setGeoStatus('denied'),
-        { timeout: 10000, maximumAge: 300000 },
-      );
+      if (key === 'distance' || key === 'time') requestLocation();
     },
-    [origin, geoStatus],
+    [requestLocation],
   );
+
+  const shownRoute = routes[travelMode]?.status === 'ready' ? routes[travelMode].route : null;
 
   return (
     <div className="app">
@@ -134,6 +210,9 @@ export default function App() {
           onSortChange={changeSort}
           origin={origin}
           geoStatus={geoStatus}
+          travelMode={travelMode}
+          onTravelModeChange={setTravelMode}
+          etas={etas}
           onSelectRegion={setSelectedCode}
           focusedId={focusedId}
           onFocusPlace={setFocusedId}
@@ -148,8 +227,22 @@ export default function App() {
           tab={tab}
           focusedId={focusedId}
           onFocusPlace={setFocusedId}
+          origin={origin}
+          route={shownRoute}
         />
         {!region && <div className="map-hint">지도에서 시·군·구를 눌러 보세요</div>}
+        {focusedPlace && (
+          <RouteCard
+            place={focusedPlace}
+            origin={origin}
+            geoStatus={geoStatus}
+            onRequestLocation={requestLocation}
+            routes={routes}
+            mode={travelMode}
+            onModeChange={setTravelMode}
+            onClose={() => setFocusedId(null)}
+          />
+        )}
       </main>
     </div>
   );

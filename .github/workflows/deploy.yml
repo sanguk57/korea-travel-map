@@ -53,6 +53,8 @@ jobs:
           npm run build -- --base="$BASE"
         env:
           VITE_KAKAO_JS_KEY: ${{ secrets.KAKAO_JS_KEY }}
+          VITE_TMAP_APP_KEY: ${{ secrets.TMAP_APP_KEY }}
+          VITE_ODSAY_API_KEY: ${{ secrets.ODSAY_API_KEY }}
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4

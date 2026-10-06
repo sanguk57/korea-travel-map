@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { SORTS, distanceKm } from './sort.js';
+import { MODES, formatMinutes, modeAvailable } from './routing.js';
+import { SORTS, TIME_CANDIDATES, distanceKm } from './sort.js';
 
 export const TABS = [
   { key: 'attractions', label: '관광지', icon: '🏞️' },
@@ -23,7 +24,7 @@ const formatDate = (yyyymmdd) =>
 
 const formatKm = (km) => (km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(km < 10 ? 1 : 0)}km`);
 
-function PlaceItem({ place, focused, onFocus, sort, origin }) {
+function PlaceItem({ place, focused, onFocus, sort, origin, eta, travelMode }) {
   const ref = useRef(null);
 
   useEffect(() => {
@@ -43,6 +44,11 @@ function PlaceItem({ place, focused, onFocus, sort, origin }) {
         <div className="place-title">
           {place.title}
           {sort === 'distance' && origin && <span className="distance">{formatKm(distanceKm(origin, place))}</span>}
+          {sort === 'time' && eta?.minutes != null && (
+            <span className="distance">
+              {MODES.find((m) => m.key === travelMode).icon} {formatMinutes(eta.minutes)}
+            </span>
+          )}
         </div>
         {place.category && <div className="place-cat">{place.category.split(' > ').pop()}</div>}
         <div className="place-addr">{place.addr}</div>
@@ -66,12 +72,21 @@ function PlaceItem({ place, focused, onFocus, sort, origin }) {
   );
 }
 
-function PlaceList({ items, focusedId, onFocusPlace, empty, sort, origin }) {
+function PlaceList({ items, focusedId, onFocusPlace, empty, sort, origin, etas, travelMode }) {
   if (items.length === 0) return <p className="empty-msg">{empty}</p>;
   return (
     <ul className="places">
       {items.map((p) => (
-        <PlaceItem key={p.id} place={p} focused={p.id === focusedId} onFocus={onFocusPlace} sort={sort} origin={origin} />
+        <PlaceItem
+          key={p.id}
+          place={p}
+          focused={p.id === focusedId}
+          onFocus={onFocusPlace}
+          sort={sort}
+          origin={origin}
+          eta={etas[`${travelMode}|${p.id}`]}
+          travelMode={travelMode}
+        />
       ))}
     </ul>
   );
@@ -148,6 +163,9 @@ export default function PlacePanel({
   onSortChange,
   origin,
   geoStatus,
+  travelMode,
+  onTravelModeChange,
+  etas,
   onSelectRegion,
   focusedId,
   onFocusPlace,
@@ -162,7 +180,8 @@ export default function PlacePanel({
     );
   }
 
-  const listProps = { sort, origin };
+  const needsLocation = sort === 'distance' || sort === 'time';
+  const listProps = { sort, origin, etas, travelMode };
   const counts = data
     ? {
         attractions: data.attractions.length,
@@ -208,14 +227,38 @@ export default function PlacePanel({
             </button>
           ))}
         </div>
+        {sort === 'time' && (
+          <div className="modes" role="radiogroup" aria-label="이동 수단">
+            {MODES.map((m) => (
+              <button
+                key={m.key}
+                role="radio"
+                aria-checked={travelMode === m.key}
+                className={travelMode === m.key ? 'active' : ''}
+                style={{ '--mode': m.color }}
+                onClick={() => onTravelModeChange(m.key)}
+              >
+                {m.icon} {m.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="panel-body">
-        {sort === 'distance' && geoStatus === 'pending' && <p className="sort-note">현재 위치를 확인하는 중…</p>}
-        {sort === 'distance' && geoStatus === 'denied' && (
-          <p className="notice">위치 권한이 없어 거리순으로 정렬할 수 없습니다. 브라우저에서 위치 접근을 허용해 주세요.</p>
+        {needsLocation && geoStatus === 'pending' && <p className="sort-note">현재 위치를 확인하는 중…</p>}
+        {needsLocation && geoStatus === 'denied' && (
+          <p className="notice">위치 권한이 없어 이 순서로 정렬할 수 없습니다. 브라우저에서 위치 접근을 허용해 주세요.</p>
         )}
-        {sort !== 'distance' && <p className="sort-note">{SORTS.find((s) => s.key === sort)?.hint}</p>}
+        {sort === 'time' && origin && !modeAvailable(travelMode) && (
+          <p className="notice">
+            {travelMode === 'transit' ? 'ODsay' : 'TMAP'} API 키가 설정되지 않아 이동 시간을 계산할 수 없습니다.
+          </p>
+        )}
+        {sort === 'time' && origin && modeAvailable(travelMode) && (
+          <p className="sort-note">가까운 {TIME_CANDIDATES}곳의 실제 경로 시간을 비교합니다. 나머지는 직선 거리순입니다.</p>
+        )}
+        {!needsLocation && <p className="sort-note">{SORTS.find((s) => s.key === sort)?.hint}</p>}
         {status === 'loading' && <Skeleton />}
         {status === 'error' && <p className="notice">이 지역의 데이터 파일을 찾을 수 없습니다.</p>}
         {status === 'ready' && data && (

@@ -236,3 +236,55 @@ code { background: var(--surface-2); padding: 1px 6px; border-radius: 6px; font-
 @media (max-width: 820px) {
   .sorts { margin: -4px -16px 0; padding: 0 16px 12px; }
 }
+
+/* 이동 수단 */
+.modes { display: flex; gap: 6px; margin: -2px 0 12px; }
+.modes button {
+  flex: 1; height: 34px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+  font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer;
+}
+.modes button.active { border-color: var(--mode); color: var(--mode); background: color-mix(in srgb, var(--mode) 8%, #fff); }
+
+/* 길찾기 카드 (지도 위) */
+.route-card {
+  position: absolute; left: 16px; bottom: 16px; z-index: 3; width: min(380px, calc(100% - 32px));
+  padding: 16px; border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow);
+  border: 1px solid var(--line);
+}
+.route-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.route-head h3 { margin: 2px 0 0; font-size: 17px; color: var(--ink); letter-spacing: -0.02em; }
+.route-close {
+  flex: none; width: 30px; height: 30px; border: 0; border-radius: 8px; background: var(--surface-2);
+  font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer;
+}
+.route-close:hover { color: var(--ink); }
+.route-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.route-modes button {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface); cursor: pointer; text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+.route-modes button.active { border-color: var(--mode); background: color-mix(in srgb, var(--mode) 8%, #fff); }
+.route-mode-label { font-size: 12px; color: var(--muted); font-weight: 600; }
+.route-modes strong { font-size: 17px; color: var(--ink); letter-spacing: -0.02em; }
+.route-modes button.active strong { color: var(--mode); }
+.dots { color: var(--muted); animation: blink 1s infinite; }
+@keyframes blink { 50% { opacity: 0.3; } }
+.route-detail { min-height: 18px; margin: 10px 2px 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.route-locate p { margin: 0; font-size: 13px; color: #9a3412; line-height: 1.5; }
+.primary {
+  width: 100%; height: 42px; border: 0; border-radius: 12px; cursor: pointer;
+  background: linear-gradient(135deg, var(--brand), var(--brand-2)); color: #fff; font-weight: 700; font-size: 14px;
+}
+.primary:disabled { opacity: 0.7; cursor: default; }
+.route-link { display: inline-block; margin-top: 10px; font-size: 13px; font-weight: 600; }
+
+.me-dot {
+  width: 16px; height: 16px; border-radius: 50%; background: #2563eb; border: 3px solid #fff;
+  box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.2), 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+@media (max-width: 820px) {
+  .route-card { left: 8px; right: 8px; bottom: 28px; width: auto; padding: 12px; }
+  .route-modes strong { font-size: 15px; }
+}

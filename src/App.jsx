@@ -10,6 +10,7 @@ import { useFavorites } from './favorites.js';
 import { MODES, getRoute, modeAvailable } from './routing.js';
 import { SORTS, TIME_CANDIDATES, nearest, sortPlaces } from './sort.js';
 import { readUrlState, shareCurrentUrl, writeUrlState } from './urlState.js';
+import { useMediaQuery } from './useMediaQuery.js';
 
 const DATA = `${import.meta.env.BASE_URL}data/`;
 const ETA_CONCURRENCY = 3;
@@ -62,6 +63,62 @@ export default function App() {
   const [routes, setRoutes] = useState({}); // 선택한 장소의 mode -> { status, route?, error? }
   const [sidebarWidth, setSidebarWidth] = useState(savedSidebarWidth);
   const [resizing, setResizing] = useState(false);
+
+  // ---------- 모바일 바텀시트 ----------
+  const isMobile = useMediaQuery('(max-width: 820px)');
+  const [sheet, setSheet] = useState('half'); // peek | half | full
+  const [dragHeight, setDragHeight] = useState(null);
+  const [viewportH, setViewportH] = useState(() => window.innerHeight);
+
+  useEffect(() => {
+    const onResize = () => {
+      setViewportH(window.innerHeight);
+      setSidebarWidth((w) => clampWidth(w)); // 창을 줄이면 사이드바도 맞춰 줄인다
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const sheetHeights = useMemo(
+    () => ({
+      peek: Math.max(176, Math.round(viewportH * 0.26)),
+      half: Math.round(viewportH * 0.55),
+      full: viewportH - 48,
+    }),
+    [viewportH],
+  );
+  const sheetHeight = dragHeight ?? sheetHeights[sheet];
+
+  const startSheetDrag = useCallback(
+    (e) => {
+      const handle = e.currentTarget;
+      handle.setPointerCapture(e.pointerId);
+      const startY = e.clientY;
+      const startH = sheetHeights[sheet];
+      let h = startH;
+      const move = (ev) => {
+        h = Math.min(sheetHeights.full, Math.max(sheetHeights.peek * 0.7, startH + (startY - ev.clientY)));
+        setDragHeight(h);
+      };
+      const up = () => {
+        handle.removeEventListener('pointermove', move);
+        handle.removeEventListener('pointerup', up);
+        handle.removeEventListener('pointercancel', up);
+        setDragHeight(null);
+        if (Math.abs(h - startH) < 6) {
+          // 탭: 낮음 → 중간 → 전체 → 중간
+          setSheet((s) => (s === 'half' ? 'full' : 'half'));
+          return;
+        }
+        const nearest = Object.entries(sheetHeights).sort((a, b) => Math.abs(a[1] - h) - Math.abs(b[1] - h))[0][0];
+        setSheet(nearest);
+      };
+      handle.addEventListener('pointermove', move);
+      handle.addEventListener('pointerup', up);
+      handle.addEventListener('pointercancel', up);
+    },
+    [sheet, sheetHeights],
+  );
   const [toast, setToast] = useState(null);
   const pendingPlace = useRef(initial.place); // 공유 링크의 장소: 데이터가 오면 선택한다
   const [selectedCourseId, setSelectedCourseId] = useState(initial.course); // 지역 추천 코스
@@ -382,10 +439,30 @@ export default function App() {
 
   // ---------- 기타 ----------
 
-  const selectRegion = useCallback((code) => {
-    setView('explore');
-    setSelectedCode(code);
-  }, []);
+  const selectRegion = useCallback(
+    (code) => {
+      setView('explore');
+      setSelectedCode(code);
+      if (isMobile) setSheet('half');
+    },
+    [isMobile],
+  );
+
+  // 목록에서 고르면 지도가 보이게 시트를 내리고, 지도에서 고르면 정보가 보이게 올린다
+  const focusFromList = useCallback(
+    (id) => {
+      setFocusedId(id);
+      if (isMobile) setSheet('peek');
+    },
+    [isMobile],
+  );
+  const focusFromMap = useCallback(
+    (id) => {
+      setFocusedId(id);
+      if (isMobile) setSheet((s) => (s === 'peek' ? 'half' : s));
+    },
+    [isMobile],
+  );
 
   const changeTab = useCallback((t) => {
     setTab(t);
@@ -410,7 +487,18 @@ export default function App() {
 
   return (
     <div className={`app ${resizing ? 'resizing' : ''}`} style={{ '--sidebar-width': `${sidebarWidth}px` }}>
-      <aside className="sidebar">
+      <aside
+        className={`sidebar ${dragHeight != null ? 'dragging' : ''}`}
+        style={isMobile ? { '--sheet-h': `${sheetHeight}px` } : undefined}
+      >
+        <div
+          className="sheet-handle"
+          role="button"
+          aria-label={sheet === 'full' ? '목록 줄이기' : '목록 펼치기'}
+          onPointerDown={startSheetDrag}
+        >
+          <span />
+        </div>
         <header className="brand">
           <button className="brand-home" onClick={() => selectRegion(null)} title="처음으로">
             <span className="brand-mark" aria-hidden="true">
@@ -429,10 +517,14 @@ export default function App() {
             onClick={view === 'course' ? closeCourse : openCourse}
             title="찜한 장소로 하루 코스 짜기"
           >
-            ♥ 내 코스{favorites.length > 0 && <span className="count">{favorites.length}</span>}
+            ♥ <span className="course-btn-label">내 코스</span>
+            {favorites.length > 0 && <span className="count">{favorites.length}</span>}
           </button>
+          {/* 데스크톱은 둘째 줄, 모바일은 로고와 같은 줄. 모바일에서 누르면 키보드에 가리지 않게 시트를 끝까지 올린다 */}
+          <div className="search-wrap" onFocusCapture={() => isMobile && setSheet('full')}>
+            <RegionSearch regions={regions} onSelect={selectRegion} />
+          </div>
         </header>
-        <RegionSearch regions={regions} onSelect={selectRegion} />
         {view === 'course' ? (
           <CoursePanel
             favorites={favorites}
@@ -449,7 +541,7 @@ export default function App() {
             origin={origin}
             geoStatus={geoStatus}
             focusedId={focusedId}
-            onFocus={setFocusedId}
+            onFocus={focusFromList}
             onBack={closeCourse}
           />
         ) : (
@@ -470,7 +562,7 @@ export default function App() {
             etas={etas}
             onSelectRegion={selectRegion}
             focusedId={focusedId}
-            onFocusPlace={setFocusedId}
+            onFocusPlace={focusFromList}
             isFavorite={isFavorite}
             onToggleFavorite={toggleFavorite}
             favoriteCount={favorites.length}
@@ -508,6 +600,9 @@ export default function App() {
           onFocusPlace={setFocusedId}
           origin={origin}
           route={view === 'explore' ? shownRoute : null}
+          bottomInset={isMobile ? sheetHeights[sheet] : 0}
+          onMarkerFocus={focusFromMap}
+          showZoom={!isMobile}
           course={course}
         />
         {!region && view === 'explore' && <div className="map-hint">지도에서 시·군·구를 눌러 보세요</div>}

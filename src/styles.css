@@ -479,3 +479,87 @@ code { background: var(--surface-2); padding: 1px 6px; border-radius: 6px; font-
 .course-stops button:hover, .course-stops li.focused button { background: var(--brand-soft); }
 .course-stops img { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; }
 .course-stop-title { font-size: 14px; font-weight: 600; color: var(--ink); }
+
+/* 외부 지도 길찾기 링크 */
+.route-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.route-links .muted { margin-right: 2px; }
+.map-app {
+  display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-radius: 999px;
+  font-size: 13px; font-weight: 700;
+}
+.map-app.kakao { background: #fee500; color: #191919; }
+.map-app.naver { background: #03c75a; color: #fff; }
+.map-app:hover { text-decoration: none; filter: brightness(0.95); }
+.leg-links { display: inline-flex; gap: 8px; margin-left: auto; font-size: 12px; font-weight: 600; }
+.leg-links a:first-child { color: #8a6d00; }
+.leg-links a:last-child { color: #03a94d; }
+
+/* ---------- 반응형 ---------- */
+.sheet-handle { display: none; }
+
+/* 중간 폭 데스크톱 / 태블릿 가로 */
+@media (max-width: 1100px) and (min-width: 821px) {
+  .featured { grid-template-columns: 1fr; }
+  .thumb { width: 72px; height: 72px; }
+  .route-card { width: min(340px, calc(100% - 32px)); }
+}
+
+/* 모바일·좁은 창: 지도를 화면 전체에 깔고 목록은 바텀시트로 */
+@media (max-width: 820px) {
+  .app { display: block; position: relative; height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
+  .map-area { position: absolute; inset: 0; height: auto; }
+  .sidebar {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; margin-top: 0;
+    height: var(--sheet-h, 55vh); border-radius: 20px 20px 0 0; border-right: 0;
+    box-shadow: 0 -8px 30px rgba(22, 27, 46, 0.18);
+    transition: height 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .sidebar.dragging { transition: none; }
+  .sheet-handle {
+    display: flex; justify-content: center; flex: none; padding: 10px 0 4px; cursor: grab; touch-action: none;
+  }
+  .sheet-handle span { width: 42px; height: 5px; border-radius: 999px; background: #cfd3de; }
+  .brand { padding: 2px 16px 8px; }
+  .brand-mark { width: 34px; height: 34px; border-radius: 10px; }
+  .brand strong { font-size: 16px; }
+  .panel-head { position: static; padding: 4px 16px 0; }
+  .panel-head h2 { font-size: 22px; margin-bottom: 10px; }
+  .panel-body { overflow-y: auto; overscroll-behavior: contain; padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+  .route-card { top: 8px; bottom: auto; left: 8px; right: 8px; width: auto; max-height: 45vh; overflow-y: auto; }
+  .route-head { margin-bottom: 8px; }
+  .route-head h3 { font-size: 15px; }
+  .route-modes button { padding: 8px; }
+  .map-hint { top: 10px; }
+  .toast { top: auto; bottom: calc(var(--sheet-h, 55vh) + 12px); }
+  .search input { height: 42px; font-size: 16px; } /* iOS 확대 방지 */
+  .weather { margin-bottom: 10px; }
+  .course-cards { padding: 4px 8px; }
+}
+
+@media (max-width: 400px) {
+  .brand small { display: none; }
+  .course-btn { padding: 0 10px; }
+  .tabs button { font-size: 12px; }
+  .place-row { gap: 10px; }
+  .thumb { width: 64px; height: 64px; }
+  .info div { grid-template-columns: 68px 1fr; }
+  .weather-day { padding: 6px; }
+  .weather-icon { font-size: 16px; }
+}
+
+/* 상단: 데스크톱은 로고 / 검색 두 줄, 모바일은 한 줄 */
+.brand { flex-wrap: wrap; }
+.search-wrap { order: 3; flex-basis: 100%; }
+.search-wrap .search { margin: 4px 0 0; }
+
+
+@media (max-width: 820px) {
+  .brand { flex-wrap: nowrap; gap: 8px; padding: 2px 12px 10px; }
+  .brand-home > span:last-child { display: none; }
+  .search-wrap { order: 2; flex: 1; min-width: 0; }
+  .search-wrap .search { margin: 0; }
+  .course-btn { order: 3; height: 42px; }
+}
+@media (max-width: 400px) {
+  .course-btn-label { display: none; }
+}

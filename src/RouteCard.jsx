@@ -1,14 +1,9 @@
 import { FavButton } from './PlacePanel.jsx';
+import { kakaoDirections, naverDirections } from './mapLinks.js';
 import { MODES, formatMinutes } from './routing.js';
 
 const formatMeters = (m) => (m >= 1000 ? `${(m / 1000).toFixed(m >= 10000 ? 0 : 1)}km` : `${Math.round(m)}m`);
 
-function kakaoDirections(origin, place) {
-  const to = `${encodeURIComponent(place.title)},${place.lat},${place.lng}`;
-  return origin
-    ? `https://map.kakao.com/link/from/${encodeURIComponent('내 위치')},${origin.lat},${origin.lng}/to/${to}`
-    : `https://map.kakao.com/link/to/${to}`;
-}
 
 export default function RouteCard({
   place,
@@ -96,9 +91,15 @@ export default function RouteCard({
         </>
       )}
 
-      <a className="route-link" href={kakaoDirections(origin, place)} target="_blank" rel="noreferrer">
-        카카오맵에서 길찾기 ↗
-      </a>
+      <div className="route-links">
+        <span className="muted small">{MODES.find((m) => m.key === mode)?.label} 길찾기</span>
+        <a className="map-app kakao" href={kakaoDirections(mode, origin, place)} target="_blank" rel="noreferrer">
+          카카오맵 ↗
+        </a>
+        <a className="map-app naver" href={naverDirections(mode, origin, place)} target="_blank" rel="noreferrer">
+          네이버지도 ↗
+        </a>
+      </div>
     </section>
   );
 }

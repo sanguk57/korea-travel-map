@@ -26,6 +26,7 @@ const CLUSTER_STYLE = (size, bg) => ({
   boxShadow: '0 4px 12px rgba(22,27,46,0.25)',
 });
 const INITIAL_VIEW = { lat: 36.0, lng: 127.8, level: 13 };
+const KOREA_BOUNDS = [33.1, 125.0, 38.6, 130.0]; // 남, 서, 북, 동 (울릉·독도 제외)
 
 // 탭 색상의 SVG 핀. 선택된 장소는 크게 그린다.
 function pinImage(kakao, color, big) {
@@ -56,6 +57,9 @@ export default function KakaoMap({
   origin,
   route,
   course,
+  bottomInset = 0, // 지도 아래를 가리는 높이(모바일 바텀시트). 맞춤·이동 때 보이는 영역 기준으로 계산
+  onMarkerFocus,
+  showZoom = true,
 }) {
   const containerRef = useRef(null);
   const kakaoRef = useRef(null);
@@ -73,7 +77,20 @@ export default function KakaoMap({
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(null);
 
-  callbacksRef.current = { onSelectRegion, onFocusPlace };
+  callbacksRef.current = { onSelectRegion, onFocusPlace, onMarkerFocus: onMarkerFocus ?? onFocusPlace };
+  const insetRef = useRef(bottomInset);
+  insetRef.current = bottomInset;
+
+  // 가려지지 않은 영역 기준으로 영역 맞춤 / 중심 이동
+  const fitBounds = (bounds, pad = 40) => mapRef.current.setBounds(bounds, pad, pad, pad + insetRef.current, pad);
+  const panToVisible = (latlng) => {
+    const map = mapRef.current;
+    const inset = insetRef.current;
+    if (!inset) return map.panTo(latlng);
+    const proj = map.getProjection();
+    const pt = proj.pointFromCoords(latlng);
+    map.panTo(proj.coordsFromPoint(new kakaoRef.current.maps.Point(pt.x, pt.y + inset / 2)));
+  };
 
   // 지도 생성
   useEffect(() => {
@@ -86,7 +103,8 @@ export default function KakaoMap({
           center: new kakao.maps.LatLng(INITIAL_VIEW.lat, INITIAL_VIEW.lng),
           level: INITIAL_VIEW.level,
         });
-        mapRef.current.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
+        // 모바일은 두 손가락 확대를 쓰고, 바텀시트에 가리지 않게 확대 버튼을 숨긴다
+        if (showZoom) mapRef.current.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
         labelRef.current = new kakao.maps.CustomOverlay({ yAnchor: 1.6, zIndex: 3 });
         infoRef.current = new kakao.maps.CustomOverlay({ yAnchor: 2.6, zIndex: 4 });
         meRef.current = new kakao.maps.CustomOverlay({ content: '<div class="me-dot"></div>', zIndex: 5 });
@@ -170,16 +188,11 @@ export default function KakaoMap({
     const region = regions.find((r) => r.code === selectedCode);
     if (region) {
       const [minLng, minLat, maxLng, maxLat] = region.bbox;
-      mapRef.current.setBounds(
-        new kakao.maps.LatLngBounds(new kakao.maps.LatLng(minLat, minLng), new kakao.maps.LatLng(maxLat, maxLng)),
-        40,
-        40,
-        40,
-        40,
-      );
-    } else if (prev) {
-      mapRef.current.setLevel(INITIAL_VIEW.level);
-      mapRef.current.setCenter(new kakao.maps.LatLng(INITIAL_VIEW.lat, INITIAL_VIEW.lng));
+      fitBounds(new kakao.maps.LatLngBounds(new kakao.maps.LatLng(minLat, minLng), new kakao.maps.LatLng(maxLat, maxLng)));
+    } else {
+      // 처음 화면·전체 지도로 돌아갈 때: 바텀시트에 가리지 않는 영역에 남한 전체를 맞춘다
+      const [s, w, n, e] = KOREA_BOUNDS;
+      fitBounds(new kakao.maps.LatLngBounds(new kakao.maps.LatLng(s, w), new kakao.maps.LatLng(n, e)), 16);
     }
   }, [ready, selectedCode, regions]);
 
@@ -198,7 +211,7 @@ export default function KakaoMap({
         image: pins.normal,
         clickable: true,
       });
-      kakao.maps.event.addListener(marker, 'click', () => callbacksRef.current.onFocusPlace(place.id));
+      kakao.maps.event.addListener(marker, 'click', () => callbacksRef.current.onMarkerFocus(place.id));
       markersRef.current.set(place.id, marker);
     }
     clustererRef.current.addMarkers([...markersRef.current.values()]);
@@ -242,7 +255,7 @@ export default function KakaoMap({
     info.setContent(`<div class="map-info">${escapeHtml(place.title)}</div>`);
     info.setPosition(pos);
     info.setMap(mapRef.current);
-    mapRef.current.panTo(pos);
+    panToVisible(pos);
   }, [ready, places, focusedId]);
 
   // 내 위치 표시
@@ -280,7 +293,11 @@ export default function KakaoMap({
       ];
     });
     if (origin) bounds.extend(new kakao.maps.LatLng(origin.lat, origin.lng));
-    if (!bounds.isEmpty()) map.setBounds(bounds, 60, 60, 220, 60);
+    // 길찾기 카드: 데스크톱은 지도 아래, 모바일(바텀시트)은 지도 위에 있다
+    if (!bounds.isEmpty()) {
+      if (insetRef.current) map.setBounds(bounds, 200, 40, insetRef.current + 40, 40);
+      else map.setBounds(bounds, 60, 60, 220, 60);
+    }
     return () => lines.forEach((l) => l.setMap(null));
   }, [ready, route, origin]);
 
@@ -295,7 +312,7 @@ export default function KakaoMap({
     course.stops.forEach((p) => bounds.extend(new kakao.maps.LatLng(p.lat, p.lng)));
     if (course.start) bounds.extend(new kakao.maps.LatLng(course.start.lat, course.start.lng));
     if (course.stops.length === 1 && !course.start) mapRef.current.setCenter(bounds.getSouthWest());
-    else mapRef.current.setBounds(bounds, 60, 60, 60, 60);
+    else fitBounds(bounds, 60);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, courseKey]);
 
@@ -308,7 +325,7 @@ export default function KakaoMap({
       el.className = `course-pin ${p.id === focusedId ? 'active' : ''}`;
       el.textContent = String(i + 1);
       el.title = p.title;
-      el.onclick = () => callbacksRef.current.onFocusPlace(p.id);
+      el.onclick = () => callbacksRef.current.onMarkerFocus(p.id);
       return new kakao.maps.CustomOverlay({
         map,
         position: new kakao.maps.LatLng(p.lat, p.lng),
@@ -357,7 +374,7 @@ export default function KakaoMap({
       ),
     ];
     const focused = course.stops.find((p) => p.id === focusedId);
-    if (focused) map.panTo(new kakao.maps.LatLng(focused.lat, focused.lng));
+    if (focused) panToVisible(new kakao.maps.LatLng(focused.lat, focused.lng));
     return () => {
       overlays.forEach((o) => o.setMap(null));
       lines.forEach((l) => l.setMap(null));

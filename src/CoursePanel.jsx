@@ -1,9 +1,10 @@
+import { kakaoDirections, naverDirections } from './mapLinks.js';
 import { MODES, formatMinutes } from './routing.js';
 
 const formatMeters = (m) => (m >= 1000 ? `${(m / 1000).toFixed(m >= 10000 ? 0 : 1)}km` : `${Math.round(m)}m`);
 const modeOf = (key) => MODES.find((m) => m.key === key);
 
-function Leg({ leg }) {
+function Leg({ leg, from, to }) {
   if (!leg || leg.status === 'loading') return <div className="leg muted">경로 계산 중…</div>;
   if (leg.error) return <div className="leg leg-error">{leg.error}</div>;
   const m = modeOf(leg.mode);
@@ -15,6 +16,16 @@ function Leg({ leg }) {
       {leg.route.meters ? <span className="muted">{formatMeters(leg.route.meters)}</span> : null}
       {leg.route.summary && <span className="muted leg-summary">{leg.route.summary}</span>}
       {leg.note && <span className="muted">· {leg.note}</span>}
+      {from && (
+        <span className="leg-links">
+          <a href={kakaoDirections(leg.mode, from, to)} target="_blank" rel="noreferrer">
+            카카오
+          </a>
+          <a href={naverDirections(leg.mode, from, to)} target="_blank" rel="noreferrer">
+            네이버
+          </a>
+        </span>
+      )}
     </div>
   );
 }
@@ -136,7 +147,9 @@ export default function CoursePanel({
               )}
               {favorites.map((p, i) => (
                 <li key={p.id} className="course-item">
-                  {(i > 0 || startsAtMe) && <Leg leg={legTo(i)} />}
+                  {(i > 0 || startsAtMe) && (
+                    <Leg leg={legTo(i)} from={i === 0 ? { ...origin, title: '내 위치' } : favorites[i - 1]} to={p} />
+                  )}
                   <div className={`stop ${focusedId === p.id ? 'focused' : ''}`} onClick={() => onFocus(p.id)}>
                     <span className="stop-num">{i + 1}</span>
                     {p.image ? <img className="stop-thumb" src={p.image} alt="" loading="lazy" /> : null}

@@ -49,6 +49,7 @@ if (!SORTS.some((s) => s.key === initial.sort) || initial.sort === 'distance' ||
 export default function App() {
   const [regions, setRegions] = useState([]);
   const [meta, setMeta] = useState(null);
+  const [festivals, setFestivals] = useState([]); // 전국 축제 (시작 화면)
   const [view, setView] = useState(initial.view === 'course' ? 'course' : 'explore'); // explore | course
   const [selectedCode, setSelectedCode] = useState(initial.region);
   const [data, setData] = useState(null);
@@ -168,6 +169,9 @@ export default function App() {
     getJson('places/_meta.json')
       .then(setMeta)
       .catch(() => setMeta(null));
+    getJson('places/_festivals.json')
+      .then(setFestivals)
+      .catch(() => setFestivals([]));
   }, []);
 
   const firstLoad = useRef(true);
@@ -448,6 +452,17 @@ export default function App() {
     [isMobile],
   );
 
+  // 시작 화면의 축제 카드: 그 지역의 축제 탭을 열고 해당 축제를 선택한다
+  const openFestival = useCallback(
+    (f) => {
+      pendingPlace.current = f.id;
+      setTab('festivals');
+      setSelectedCourseId(null);
+      selectRegion(f.regionCode);
+    },
+    [selectRegion],
+  );
+
   // 목록에서 고르면 지도가 보이게 시트를 내리고, 지도에서 고르면 정보가 보이게 올린다
   const focusFromList = useCallback(
     (id) => {
@@ -567,6 +582,8 @@ export default function App() {
             onToggleFavorite={toggleFavorite}
             favoriteCount={favorites.length}
             onOpenCourse={openCourse}
+            festivals={festivals}
+            onOpenFestival={openFestival}
             onShare={() => share(region ? `${region.fullName} 여행 정보` : undefined)}
             courses={regionCourses}
             selectedCourseId={selectedCourseId}

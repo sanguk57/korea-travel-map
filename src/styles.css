@@ -563,3 +563,34 @@ code { background: var(--surface-2); padding: 1px 6px; border-radius: 6px; font-
 @media (max-width: 400px) {
   .course-btn-label { display: none; }
 }
+
+/* 시작 화면: 지금 열리는 축제 */
+.section-count {
+  margin-left: 4px; padding: 1px 7px; border-radius: 999px; background: #f3e8ff; color: var(--festivals);
+  font-size: 11px; letter-spacing: 0;
+}
+.ongoing { list-style: none; margin: 0; padding: 0 20px; display: flex; flex-direction: column; gap: 8px; }
+.ongoing-card {
+  display: flex; gap: 12px; align-items: center; width: 100%; padding: 8px; border: 1px solid var(--line);
+  border-radius: 14px; background: var(--surface); text-align: left; cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+.ongoing-card:hover { transform: translateY(-1px); border-color: transparent; box-shadow: var(--shadow); }
+.ongoing-card img, .ongoing-noimg {
+  flex: none; width: 64px; height: 64px; border-radius: 10px; object-fit: cover; background: #f3e8ff;
+}
+.ongoing-noimg { display: grid; place-items: center; font-size: 24px; }
+.ongoing-body { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ongoing-body strong {
+  font-size: 14px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ongoing-dates { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); }
+.more-btn {
+  display: block; width: calc(100% - 40px); margin: 8px 20px 0; height: 38px; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--surface); font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer;
+}
+.more-btn:hover { color: var(--ink); border-color: #cfd3de; }
+@media (max-width: 820px) {
+  .ongoing { padding: 0 16px; }
+  .more-btn { width: calc(100% - 32px); margin: 8px 16px 0; }
+}

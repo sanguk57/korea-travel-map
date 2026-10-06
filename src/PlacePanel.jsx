@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import PlaceDetail from './PlaceDetail.jsx';
 import RegionCourses from './RegionCourses.jsx';
 import Weather from './Weather.jsx';
@@ -174,7 +174,69 @@ function Skeleton() {
   );
 }
 
-function Welcome({ regions, meta, onSelectRegion, favoriteCount, onOpenCourse }) {
+const FESTIVALS_SHOWN = 6;
+
+const SIDO_SHORT = {
+  경상북도: '경북',
+  경상남도: '경남',
+  충청북도: '충북',
+  충청남도: '충남',
+  전라남도: '전남',
+  전라북도: '전북',
+  전북특별자치도: '전북',
+  강원특별자치도: '강원',
+  제주특별자치도: '제주',
+  세종특별자치시: '세종',
+  경기도: '경기',
+};
+const sidoShort = (sido) => SIDO_SHORT[sido] ?? sido.replace(/(특별|광역)시$/, '');
+
+// 시작 화면: 전국에서 오늘 진행 중인 축제
+function OngoingFestivals({ festivals, byCode, onOpen }) {
+  const [expanded, setExpanded] = useState(false);
+  const ongoing = festivals
+    .filter((f) => isOngoing(f))
+    // 블로그 언급이 많은 순 → 곧 끝나는 순
+    .sort((a, b) => (b.blog ?? -1) - (a.blog ?? -1) || a.end.localeCompare(b.end));
+  if (!ongoing.length) return null;
+  const shown = expanded ? ongoing : ongoing.slice(0, FESTIVALS_SHOWN);
+
+  return (
+    <>
+      <h3 className="section">
+        🎉 지금 열리는 축제 <span className="section-count">{ongoing.length}</span>
+      </h3>
+      <ul className="ongoing">
+        {shown.map((f) => {
+          const left = daysUntil(f.end);
+          const region = byCode.get(f.regionCode);
+          return (
+            <li key={f.id}>
+              <button className="ongoing-card" onClick={() => onOpen(f)}>
+                {f.image ? <img src={f.image} alt="" loading="lazy" /> : <div className="ongoing-noimg">🎉</div>}
+                <span className="ongoing-body">
+                  <strong>{f.title}</strong>
+                  <span className="muted small">{region ? `${sidoShort(region.sido)} ${region.name}` : ''}</span>
+                  <span className="ongoing-dates">
+                    <span className="badge live">{left === 0 ? '오늘 종료' : `${left}일 남음`}</span>
+                    {shortDate(f.start)} ~ {shortDate(f.end)}
+                  </span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {ongoing.length > FESTIVALS_SHOWN && (
+        <button className="more-btn" onClick={() => setExpanded((v) => !v)}>
+          {expanded ? '접기' : `${ongoing.length - FESTIVALS_SHOWN}개 더 보기`}
+        </button>
+      )}
+    </>
+  );
+}
+
+function Welcome({ regions, meta, onSelectRegion, favoriteCount, onOpenCourse, festivals, onOpenFestival }) {
   const byCode = new Map(regions.map((r) => [r.code, r]));
   const featured = FEATURED.filter((f) => byCode.has(f.code));
 
@@ -213,6 +275,8 @@ function Welcome({ regions, meta, onSelectRegion, favoriteCount, onOpenCourse })
         </>
       )}
 
+      <OngoingFestivals festivals={festivals} byCode={byCode} onOpen={onOpenFestival} />
+
       {meta?.updatedAt && (
         <p className="source muted">데이터 갱신 {new Date(meta.updatedAt).toLocaleString('ko-KR')}</p>
       )}
@@ -247,6 +311,8 @@ export default function PlacePanel({
   onToggleFavorite,
   favoriteCount,
   onOpenCourse,
+  festivals,
+  onOpenFestival,
   onShare,
   courses,
   selectedCourseId,
@@ -263,6 +329,8 @@ export default function PlacePanel({
             onSelectRegion={onSelectRegion}
             favoriteCount={favoriteCount}
             onOpenCourse={onOpenCourse}
+            festivals={festivals}
+            onOpenFestival={onOpenFestival}
           />
         </div>
       </div>

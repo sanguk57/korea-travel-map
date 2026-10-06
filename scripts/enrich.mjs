@@ -404,6 +404,26 @@ for (const [code, data] of regionData) {
   await writeFile(new URL(`${code}.json`, PLACES_DIR), JSON.stringify(data));
 }
 
+// 시작 화면용 전국 축제 목록 (진행 중 여부는 화면에서 오늘 날짜로 판단)
+const allFestivals = [];
+for (const [code, data] of regionData) {
+  for (const f of data.festivals ?? []) {
+    allFestivals.push({
+      id: f.id,
+      title: f.title,
+      image: f.image,
+      start: f.start,
+      end: f.end,
+      addr: f.addr,
+      blog: f.blog,
+      regionCode: code,
+    });
+  }
+}
+allFestivals.sort((a, b) => a.start.localeCompare(b.start));
+await writeFile(new URL('_festivals.json', PLACES_DIR), JSON.stringify(allFestivals));
+console.log(`전국 축제 목록: ${allFestivals.length}건`);
+
 const metaFile = new URL('_meta.json', PLACES_DIR);
 const meta = JSON.parse(await readFile(metaFile, 'utf8').catch(() => '{}'));
 meta.sources = {

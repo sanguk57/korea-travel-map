@@ -60,17 +60,22 @@ const regionName = new Map(regions.map((r) => [r.code, r.name]));
 const regionData = new Map();
 for (const f of files) regionData.set(f.slice(0, -5), JSON.parse(await readFile(new URL(f, PLACES_DIR), 'utf8')));
 
-// 지역별·목록별 추천순 상위부터 번갈아 뽑아 우선순위 큐를 만든다
+// 우선순위 큐: "모든 지역의 1위 → 모든 지역의 2위 → …" 순서로 뽑아 하루치가 전국에 고루 퍼지게 한다.
+// 같은 순위 안에서는 lists 순서(앞이 우선)를 따른다.
 function priorityQueue(lists, pick) {
-  const columns = [];
-  for (const [code, data] of regionData) {
-    for (const list of lists) {
-      if (data[list]?.length) columns.push(sortPlaces(data[list], 'recommended').map((p) => pick(p, list, code)));
+  const columns = []; // 목록 순서대로, 그 안에서 지역 순서대로
+  for (const list of lists) {
+    for (const [code, data] of regionData) {
+      if (data[list]?.length) columns.push(sortPlaces(data[list], 'recommended').map((p) => [p, list, code]));
     }
   }
   const out = [];
   for (let i = 0; columns.some((c) => i < c.length); i++) {
-    for (const c of columns) if (i < c.length && c[i]) out.push(c[i]);
+    for (const c of columns) {
+      if (i >= c.length) continue;
+      const item = pick(...c[i]);
+      if (item) out.push(item);
+    }
   }
   return out;
 }
